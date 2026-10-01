@@ -59,3 +59,10 @@ class FeedbackRequest(BaseModel):
         min_length=3,
         max_length=5000,
     )
+
+class MemoryCreateRequest(BaseModel):
+    memory: str = Field(
+        min_length=3,
+        max_length=2000,
+    )
+

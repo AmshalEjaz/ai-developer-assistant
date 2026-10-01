@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from groq import Groq
 
+from memory import language_instruction
+
 
 load_dotenv()
 
@@ -49,11 +51,15 @@ Your behavior:
 9. If the user asks a programming question, respond like an experienced developer helping another developer.
 10. If the user asks something unrelated to programming, you can still answer normally.
 11. Put multi-line code in fenced Markdown code blocks and include the correct language tag, such as python, php, javascript, jsx, sql, css, html, bash, or json.
+12. Reply in the same language and writing script as the user's latest natural-language message unless they explicitly request another language.
+13. If the user writes Roman Urdu in the Latin alphabet, reply in Roman Urdu with natural English technical terms. Never convert Roman Urdu into Hindi/Devanagari script unless the user explicitly asks for Hindi/Devanagari.
+14. Saved user memories are explicit user-provided preferences or context. Use them when relevant, but the user's current instruction always overrides an older memory.
 """
 
 
 def get_ai_response(
     messages: list[dict[str, str]] | str,
+    memories: list[dict[str, str]] | None = None,
 ) -> str:
 
     if not client:
@@ -94,12 +100,39 @@ def get_ai_response(
             }
         )
 
+    latest_user_text = ""
+    for item in reversed(conversation_messages):
+        if item["role"] == "user":
+            latest_user_text = item["content"]
+            break
+
+    system_prompt = SYSTEM_PROMPT.strip()
+
+    if memories:
+        memory_lines = [
+            f"- {str(item.get('value', '')).strip()}"
+            for item in memories
+            if str(item.get("value", "")).strip()
+        ]
+
+        if memory_lines:
+            system_prompt += (
+                "\n\nSaved user memories (explicitly saved by this user):\n"
+                + "\n".join(memory_lines)
+            )
+
+    if latest_user_text:
+        system_prompt += (
+            "\n\nLanguage instruction for this turn:\n"
+            + language_instruction(latest_user_text)
+        )
+
     response = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": system_prompt,
             },
             *conversation_messages,
         ],

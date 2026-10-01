@@ -75,6 +75,12 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    memories = relationship(
+        "UserMemory",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
 
 # ============================================================
 # CONVERSATION
@@ -248,3 +254,53 @@ class Feedback(Base):
         "User",
         back_populates="feedback_items",
     )
+
+# ============================================================
+# USER MEMORY
+# ============================================================
+
+class UserMemory(Base):
+    __tablename__ = "user_memories"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+
+    key = Column(
+        String(80),
+        default="note",
+        nullable=False,
+        index=True,
+    )
+
+    value = Column(
+        Text,
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    user = relationship(
+        "User",
+        back_populates="memories",
+    )
+

@@ -356,6 +356,36 @@ function App() {
   ] = useState("");
 
   const [
+    memories,
+    setMemories,
+  ] = useState([]);
+
+  const [
+    memoryInput,
+    setMemoryInput,
+  ] = useState("");
+
+  const [
+    memoryLoading,
+    setMemoryLoading,
+  ] = useState(false);
+
+  const [
+    memorySaving,
+    setMemorySaving,
+  ] = useState(false);
+
+  const [
+    memoryError,
+    setMemoryError,
+  ] = useState("");
+
+  const [
+    memoryNotice,
+    setMemoryNotice,
+  ] = useState("");
+
+  const [
     helpView,
     setHelpView,
   ] = useState("home");
@@ -513,6 +543,41 @@ function App() {
     setDeleteTarget(null);
     setDeletingConversationId(null);
     setDeleteError("");
+
+    setMemories([]);
+    setMemoryInput("");
+    setMemoryLoading(false);
+    setMemorySaving(false);
+    setMemoryError("");
+    setMemoryNotice("");
+  }
+
+
+  function upsertMemory(
+    memory
+  ) {
+    if (!memory) {
+      return;
+    }
+
+    setMemories(
+      (current) => {
+        const remaining =
+          current.filter(
+            (item) =>
+              item.id !== memory.id
+              && !(
+                memory.key !== "note"
+                && item.key === memory.key
+              )
+          );
+
+        return [
+          memory,
+          ...remaining,
+        ];
+      }
+    );
   }
 
 
@@ -666,6 +731,184 @@ function App() {
     } finally {
 
       setSettingsLoading(false);
+    }
+  }
+
+
+  async function loadMemories() {
+
+    const token = getToken();
+
+    if (!token) {
+      return;
+    }
+
+    setMemoryLoading(true);
+    setMemoryError("");
+
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/api/memories`,
+          {
+            headers:
+              authHeaders(),
+          }
+        );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to load memories."
+          )
+        );
+      }
+
+      setMemories(
+        data.memories || []
+      );
+
+    } catch (error) {
+      setMemoryError(
+        error.message
+        || "Unable to load memories."
+      );
+
+    } finally {
+      setMemoryLoading(false);
+    }
+  }
+
+
+  async function addMemory(
+    event
+  ) {
+    event?.preventDefault();
+
+    const clean =
+      memoryInput.trim();
+
+    if (!clean || memorySaving) {
+      return;
+    }
+
+    setMemorySaving(true);
+    setMemoryError("");
+    setMemoryNotice("");
+
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/api/memories`,
+          {
+            method: "POST",
+            headers:
+              authHeaders({
+                "Content-Type":
+                  "application/json",
+              }),
+            body:
+              JSON.stringify({
+                memory: clean,
+              }),
+          }
+        );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to save memory."
+          )
+        );
+      }
+
+      upsertMemory(data.memory);
+      setMemoryInput("");
+      setMemoryNotice(
+        "Memory saved. DevPilot will use it in future chats."
+      );
+
+    } catch (error) {
+      setMemoryError(
+        error.message
+        || "Unable to save memory."
+      );
+
+    } finally {
+      setMemorySaving(false);
+    }
+  }
+
+
+  async function deleteMemory(
+    memoryId
+  ) {
+    setMemoryError("");
+    setMemoryNotice("");
+
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/api/memories/${memoryId}`,
+          {
+            method: "DELETE",
+            headers:
+              authHeaders(),
+          }
+        );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to delete memory."
+          )
+        );
+      }
+
+      setMemories(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !== memoryId
+          )
+      );
+
+      setMemoryNotice(
+        "Memory removed."
+      );
+
+    } catch (error) {
+      setMemoryError(
+        error.message
+        || "Unable to delete memory."
+      );
     }
   }
 
@@ -861,6 +1104,12 @@ function App() {
       upsertConversation(
         data.conversation
       );
+
+      if (data.memory_saved) {
+        upsertMemory(
+          data.memory_saved
+        );
+      }
 
       setMessages(
         (current) => {
@@ -1143,6 +1392,9 @@ function App() {
       panel === "settings"
     ) {
       setSettingsError("");
+      setMemoryError("");
+      setMemoryNotice("");
+      loadMemories();
     }
 
     setSidebarOpen(false);
@@ -1727,6 +1979,7 @@ function App() {
 
       loadSettings();
       loadConversations();
+      loadMemories();
 
     },
     [authUser]
@@ -2334,6 +2587,119 @@ function App() {
                 <span className="setting-value">
                   Local
                 </span>
+
+              </div>
+
+
+              <div className="memory-section">
+
+                <div className="memory-section-header">
+                  <div>
+                    <strong>Saved memories</strong>
+                    <span>
+                      Explicit preferences and context DevPilot can reuse in future conversations.
+                    </span>
+                  </div>
+
+                  <span className="memory-count">
+                    {memories.length}/50
+                  </span>
+                </div>
+
+
+                <form
+                  className="memory-add-form"
+                  onSubmit={addMemory}
+                >
+                  <input
+                    type="text"
+                    value={memoryInput}
+                    onChange={(event) =>
+                      setMemoryInput(
+                        event.target.value
+                      )
+                    }
+                    maxLength="2000"
+                    placeholder="e.g. Always reply to me in Roman Urdu"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={
+                      memorySaving
+                      || !memoryInput.trim()
+                    }
+                  >
+                    {memorySaving
+                      ? "Saving..."
+                      : "Add memory"}
+                  </button>
+                </form>
+
+
+                <p className="memory-hint">
+                  You can also say “remember this”, “add to memory”, or “yaad rakhna” in chat. DevPilot does not silently save preferences.
+                </p>
+
+
+                {memoryError && (
+                  <div className="memory-status error">
+                    {memoryError}
+                  </div>
+                )}
+
+                {memoryNotice && (
+                  <div className="memory-status success">
+                    {memoryNotice}
+                  </div>
+                )}
+
+
+                <div className="memory-list">
+                  {memoryLoading ? (
+                    <div className="memory-empty">
+                      Loading memories...
+                    </div>
+                  ) : memories.length === 0 ? (
+                    <div className="memory-empty">
+                      No saved memories yet.
+                    </div>
+                  ) : (
+                    memories.map(
+                      (memory) => (
+                        <div
+                          className="memory-item"
+                          key={memory.id}
+                        >
+                          <div>
+                            <small>
+                              {memory.key === "preferred_language"
+                                ? "Language preference"
+                                : "Memory"}
+                            </small>
+
+                            <p>
+                              {memory.value}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteMemory(
+                                memory.id
+                              )
+                            }
+                            title="Delete memory"
+                            aria-label="Delete memory"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    )
+                  )}
+                </div>
 
               </div>
 

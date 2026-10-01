@@ -59,3 +59,12 @@ test('message spacing stays compact', () => {
   assert.match(appCss, /\.message-text p\s*\{[^}]*margin:\s*0 0 4px;/s);
   assert.match(appCss, /\.message-text pre\s*\{[^}]*margin:\s*0;/s);
 });
+
+test('settings exposes persistent user memory controls', () => {
+  assert.match(appJsx, /\/api\/memories/);
+  assert.match(appJsx, /Saved memories/);
+  assert.match(appJsx, /Add memory/);
+  assert.match(appJsx, /deleteMemory/);
+  assert.match(appCss, /\.memory-section/);
+  assert.match(appCss, /\.memory-item/);
+});

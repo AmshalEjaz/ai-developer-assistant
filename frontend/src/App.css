@@ -2872,3 +2872,211 @@ button {
     padding: 8px 10px;
   }
 }
+
+/* ==========================================================
+   USER MEMORY
+========================================================== */
+
+.memory-section {
+  padding: 18px 4px 4px;
+}
+
+.memory-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.memory-section-header strong {
+  display: block;
+  color: #334155;
+  font-size: 11px;
+}
+
+.memory-section-header span {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.memory-count {
+  flex-shrink: 0;
+  margin: 0 !important;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #2563eb !important;
+  font-size: 9px !important;
+  font-weight: 700;
+}
+
+.memory-add-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.memory-add-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 11px;
+  outline: none;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  background: #fbfdff;
+  color: #334155;
+  font: inherit;
+  font-size: 10px;
+}
+
+.memory-add-form input:focus {
+  border-color: #93bff0;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.06);
+}
+
+.memory-add-form button {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: #2563eb;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.memory-add-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.memory-hint {
+  margin: 9px 0 0;
+  color: #94a3b8;
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.memory-status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+
+.memory-status.success {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.memory-status.error {
+  border: 1px solid #fecaca;
+  background: #fff7f7;
+  color: #b91c1c;
+}
+
+.memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 220px;
+  margin-top: 11px;
+  overflow-y: auto;
+}
+
+.memory-empty {
+  padding: 10px 0;
+  color: #94a3b8;
+  font-size: 9px;
+}
+
+.memory-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid #e5ebf2;
+  border-radius: 9px;
+  background: #fbfdff;
+}
+
+.memory-item > div {
+  min-width: 0;
+}
+
+.memory-item small {
+  display: block;
+  color: #2563eb;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.memory-item p {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 9px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.memory-item button {
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.memory-item button:hover {
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.app[data-theme="dark"] .memory-section-header strong {
+  color: #f1f1f1;
+}
+
+.app[data-theme="dark"] .memory-section-header span,
+.app[data-theme="dark"] .memory-hint,
+.app[data-theme="dark"] .memory-empty {
+  color: #a7abb3;
+}
+
+.app[data-theme="dark"] .memory-count {
+  background: #26344a;
+  color: #8bb8ff !important;
+}
+
+.app[data-theme="dark"] .memory-add-form input,
+.app[data-theme="dark"] .memory-item {
+  background: #1e2025;
+  border-color: #353941;
+  color: #f1f1f1;
+}
+
+.app[data-theme="dark"] .memory-item p {
+  color: #d6dae1;
+}
+
+.app[data-theme="dark"] .memory-item button:hover {
+  background: #3a2529;
+  color: #fca5a5;
+}
+
+@media (max-width: 650px) {
+  .memory-add-form {
+    flex-direction: column;
+  }
+
+  .memory-add-form button {
+    width: 100%;
+  }
+}

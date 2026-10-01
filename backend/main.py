@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 
 from agent import get_ai_response
+from memory import classify_memory_text, extract_explicit_memory
 
 from auth import (
     create_access_token,
@@ -38,6 +39,7 @@ from models import (
     Feedback,
     Message,
     User,
+    UserMemory,
     UserSettings,
 )
 
@@ -45,6 +47,7 @@ from schemas import (
     ChatRequest,
     FeedbackRequest,
     LoginRequest,
+    MemoryCreateRequest,
     SignupRequest,
     ThemeUpdateRequest,
 )
@@ -142,6 +145,95 @@ def serialize_message(
                 message.created_at
             ),
     }
+
+
+def serialize_memory(
+    memory: UserMemory,
+):
+    return {
+        "id": memory.id,
+        "key": memory.key,
+        "value": memory.value,
+        "created_at": serialize_datetime(memory.created_at),
+        "updated_at": serialize_datetime(memory.updated_at),
+    }
+
+
+def get_memories_for_user(
+    db: Session,
+    user_id: int,
+):
+    return (
+        db.query(UserMemory)
+        .filter(UserMemory.user_id == user_id)
+        .order_by(UserMemory.updated_at.desc(), UserMemory.id.desc())
+        .all()
+    )
+
+
+def save_memory_for_user(
+    db: Session,
+    user_id: int,
+    memory_data: dict[str, str],
+):
+    key = memory_data["key"]
+    value = memory_data["value"].strip()
+
+    if key != "note":
+        existing = (
+            db.query(UserMemory)
+            .filter(
+                UserMemory.user_id == user_id,
+                UserMemory.key == key,
+            )
+            .first()
+        )
+
+        if existing:
+            existing.value = value
+            existing.updated_at = utc_now()
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+    duplicate = (
+        db.query(UserMemory)
+        .filter(
+            UserMemory.user_id == user_id,
+            UserMemory.value == value,
+        )
+        .first()
+    )
+
+    if duplicate:
+        duplicate.updated_at = utc_now()
+        db.commit()
+        db.refresh(duplicate)
+        return duplicate
+
+    if (
+        db.query(UserMemory)
+        .filter(UserMemory.user_id == user_id)
+        .count()
+        >= 50
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Memory limit reached. Delete an old memory before adding another.",
+        )
+
+    memory = UserMemory(
+        user_id=user_id,
+        key=key,
+        value=value,
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+    db.add(memory)
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 def create_conversation_title(
@@ -587,6 +679,81 @@ def delete_conversation(
 
 
 # ============================================================
+# MEMORY
+# ============================================================
+
+@app.get("/api/memories")
+def list_memories(
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    memories = get_memories_for_user(db, current_user.id)
+
+    return {
+        "memories": [serialize_memory(memory) for memory in memories]
+    }
+
+
+@app.post(
+    "/api/memories",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_memory(
+    request: MemoryCreateRequest,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    memory_data = classify_memory_text(request.memory)
+
+    if not memory_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Memory cannot be empty",
+        )
+
+    memory = save_memory_for_user(
+        db,
+        current_user.id,
+        memory_data,
+    )
+
+    return {
+        "memory": serialize_memory(memory),
+        "message": "Memory saved.",
+    }
+
+
+@app.delete("/api/memories/{memory_id}")
+def delete_memory(
+    memory_id: int,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    memory = (
+        db.query(UserMemory)
+        .filter(
+            UserMemory.id == memory_id,
+            UserMemory.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not memory:
+        raise HTTPException(
+            status_code=404,
+            detail="Memory not found",
+        )
+
+    db.delete(memory)
+    db.commit()
+
+    return {
+        "deleted": True,
+        "memory_id": memory_id,
+    }
+
+
+# ============================================================
 # CHAT
 # ============================================================
 
@@ -614,6 +781,16 @@ def chat(
             detail=(
                 "Message cannot be empty"
             ),
+        )
+
+    memory_saved = None
+    explicit_memory = extract_explicit_memory(user_text)
+
+    if explicit_memory:
+        memory_saved = save_memory_for_user(
+            db,
+            current_user.id,
+            explicit_memory,
         )
 
     # --------------------------------
@@ -717,10 +894,24 @@ def chat(
     # GROQ RESPONSE
     # --------------------------------
 
+    memories = get_memories_for_user(
+        db,
+        current_user.id,
+    )
+
+    memory_context = [
+        {
+            "key": memory.key,
+            "value": memory.value,
+        }
+        for memory in memories
+    ]
+
     try:
         ai_response = (
             get_ai_response(
-                ai_context
+                ai_context,
+                memories=memory_context,
             )
         )
 
@@ -784,6 +975,12 @@ def chat(
             serialize_message(
                 assistant_message
             ),
+
+        "memory_saved": (
+            serialize_memory(memory_saved)
+            if memory_saved
+            else None
+        ),
     }
 
 
