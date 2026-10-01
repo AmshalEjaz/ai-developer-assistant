@@ -1,0 +1,25 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  background: #f7f9fc;
+}
+html[data-theme="dark"],
+html[data-theme="dark"] body,
+html[data-theme="dark"] #root {
+  background: #17191d;
+}
+

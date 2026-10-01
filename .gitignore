@@ -1,0 +1,15 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# TODO
+TODO.md
