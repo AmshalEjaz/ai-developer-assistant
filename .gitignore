@@ -13,3 +13,6 @@ venv/
 
 # TODO
 TODO.md
+
+# DATABASE
+backend/devpilot.db
