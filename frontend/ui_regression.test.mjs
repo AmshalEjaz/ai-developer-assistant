@@ -68,3 +68,19 @@ test('settings exposes persistent user memory controls', () => {
   assert.match(appCss, /\.memory-section/);
   assert.match(appCss, /\.memory-item/);
 });
+
+test('chat only auto-scrolls when a scroll request is pending', () => {
+  assert.match(appJsx, /pendingChatScrollRef\s*=\s*useRef\(false\)/);
+  assert.match(appJsx, /pendingChatScrollRef\.current\s*=\s*true/);
+  assert.match(appJsx, /if\s*\(\s*!pendingChatScrollRef\.current\s*\)\s*\{\s*return;/s);
+  assert.match(appJsx, /pendingChatScrollRef\.current\s*=\s*false/);
+});
+
+test('settings shows live Groq API usage from the backend', () => {
+  assert.match(appJsx, /\/api\/groq\/usage/);
+  assert.match(appJsx, /Groq API Usage/);
+  assert.match(appJsx, /Daily requests/);
+  assert.match(appJsx, /Tokens \/ minute/);
+  assert.match(appJsx, /Refresh/);
+  assert.match(appCss, /\.groq-usage-card/);
+});

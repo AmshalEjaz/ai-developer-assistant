@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 
 from agent import get_ai_response
+from groq_usage import get_groq_usage_snapshot
 from memory import classify_memory_text, extract_explicit_memory
 
 from auth import (
@@ -797,6 +798,10 @@ def chat(
     # GET OR CREATE CONVERSATION
     # --------------------------------
 
+    is_new_conversation = (
+        request.conversation_id is None
+    )
+
     if request.conversation_id:
 
         conversation = (
@@ -907,13 +912,23 @@ def chat(
         for memory in memories
     ]
 
+    generated_title = None
+
     try:
-        ai_response = (
-            get_ai_response(
+        if is_new_conversation:
+            (
+                ai_response,
+                generated_title,
+            ) = get_ai_response(
+                ai_context,
+                memories=memory_context,
+                include_chat_title=True,
+            )
+        else:
+            ai_response = get_ai_response(
                 ai_context,
                 memories=memory_context,
             )
-        )
 
     except Exception:
         # User message stays saved.
@@ -936,6 +951,14 @@ def chat(
     # --------------------------------
     # SAVE ASSISTANT MESSAGE
     # --------------------------------
+
+    if (
+        is_new_conversation
+        and generated_title
+    ):
+        conversation.title = (
+            generated_title
+        )
 
     assistant_message = Message(
         conversation_id=conversation.id,
@@ -982,6 +1005,19 @@ def chat(
             else None
         ),
     }
+
+
+# ============================================================
+# GROQ USAGE
+# ============================================================
+
+@app.get("/api/groq/usage")
+def get_groq_usage(
+    current_user:
+        User
+        = Depends(require_user),
+):
+    return get_groq_usage_snapshot()
 
 
 # ============================================================
