@@ -321,6 +321,19 @@ button {
     0 12px 30px rgba(15, 23, 42, 0.13);
 }
 
+.conversation-rename-action {
+  width: 100%;
+  padding: 8px 9px;
+
+  border-radius: 6px;
+  background: transparent;
+  color: #e5e9eb;
+
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
 .conversation-delete-action {
   width: 100%;
   padding: 8px 9px;
@@ -3079,4 +3092,356 @@ button {
   .memory-add-form button {
     width: 100%;
   }
+}
+
+/* ==========================================================
+   GROQ API USAGE
+========================================================== */
+
+.groq-usage-card {
+  margin-top: 10px;
+  padding: 15px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.groq-usage-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.groq-usage-header strong {
+  display: block;
+  color: #334155;
+  font-size: 11px;
+}
+
+.groq-usage-header span {
+  display: block;
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 9px;
+}
+
+.groq-refresh {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid #dbe5f0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #2563eb;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.groq-refresh:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.groq-usage-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+  color: #64748b;
+  font-size: 9px;
+}
+
+.groq-status {
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.groq-status.available {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.groq-status.limited {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.groq-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.groq-metric {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e8eef5;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.groq-metric > span,
+.groq-metric > small {
+  display: block;
+  color: #94a3b8;
+  font-size: 8px;
+}
+
+.groq-metric > strong {
+  display: block;
+  margin: 4px 0;
+  color: #1e293b;
+  font-size: 11px;
+}
+
+.groq-usage-message,
+.groq-retry {
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 9px;
+}
+
+.groq-usage-message.error {
+  color: #b91c1c;
+}
+
+.groq-retry {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.app[data-theme="dark"] .groq-usage-card {
+  border-color: #353941;
+  background: #202329;
+}
+
+.app[data-theme="dark"] .groq-usage-header strong,
+.app[data-theme="dark"] .groq-metric > strong {
+  color: #f1f1f1;
+}
+
+.app[data-theme="dark"] .groq-usage-header span,
+.app[data-theme="dark"] .groq-usage-meta,
+.app[data-theme="dark"] .groq-metric > span,
+.app[data-theme="dark"] .groq-metric > small,
+.app[data-theme="dark"] .groq-usage-message {
+  color: #a7abb3;
+}
+
+.app[data-theme="dark"] .groq-refresh,
+.app[data-theme="dark"] .groq-metric {
+  border-color: #353941;
+  background: #25282e;
+}
+
+.app[data-theme="dark"] .groq-refresh {
+  color: #8bb8ff;
+}
+
+@media (max-width: 650px) {
+  .groq-usage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* =========================
+   CONVERSATION MENU ACTIONS
+========================= */
+
+.conversation-delete-action,
+.conversation-rename-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  padding: 9px 10px;
+
+  border: none;
+  border-radius: 6px;
+
+  background: transparent;
+
+  font-size: 12px;
+  font-weight: 500;
+
+  text-align: left;
+  cursor: pointer;
+}
+
+
+/* ICON SIZE */
+
+.conversation-delete-action svg,
+.conversation-rename-action svg {
+  width: 16px;
+  height: 16px;
+
+  flex-shrink: 0;
+}
+
+
+/* RENAME */
+
+.conversation-rename-action {
+  color: #f1f1f1;
+}
+
+.conversation-rename-action:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+
+/* DELETE */
+
+.conversation-delete-action {
+  color: #ff6b74;
+}
+
+.conversation-delete-action:hover {
+  background: rgba(255, 80, 90, 0.12);
+}
+
+
+/* MENU SPACING */
+
+.conversation-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  padding: 5px;
+}
+
+/* =========================
+   RENAME CHAT MODAL
+========================= */
+
+.rename-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+
+  padding: 20px;
+}
+
+.rename-modal {
+  width: 100%;
+  max-width: 420px;
+
+  padding: 22px;
+
+  background: #22252b;
+  border: 1px solid #363a43;
+  border-radius: 14px;
+
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.rename-modal h3 {
+  margin: 0 0 8px;
+
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.rename-modal p {
+  margin: 0 0 16px;
+
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.rename-modal input {
+  width: 100%;
+  box-sizing: border-box;
+
+  padding: 11px 12px;
+
+  background: #181b20;
+
+  border: 1px solid #3b414b;
+  border-radius: 8px;
+
+  color: #ffffff;
+
+  font-size: 14px;
+  outline: none;
+}
+
+.rename-modal input:focus {
+  border-color: #2f6fed;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(47, 111, 237, 0.15);
+}
+
+.rename-error {
+  margin-top: 9px;
+
+  color: #ff6b74;
+  font-size: 12px;
+}
+
+.rename-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+
+  gap: 8px;
+
+  margin-top: 18px;
+}
+
+.rename-cancel,
+.rename-save {
+  padding: 9px 16px;
+
+  border-radius: 8px;
+
+  font-size: 13px;
+  font-weight: 500;
+
+  cursor: pointer;
+}
+
+.rename-cancel {
+  background: transparent;
+
+  border: 1px solid #3b414b;
+
+  color: #d1d5db;
+}
+
+.rename-cancel:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rename-save {
+  border: 1px solid #2f6fed;
+
+  background: #2f6fed;
+
+  color: #ffffff;
+}
+
+.rename-save:hover {
+  background: #285fd1;
+}
+
+.rename-save:disabled,
+.rename-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

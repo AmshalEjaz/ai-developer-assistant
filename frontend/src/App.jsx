@@ -15,6 +15,36 @@ const API_URL =
   "http://127.0.0.1:8000";
 
 
+function formatUsageNumber(value) {
+  if (
+    value === null
+    || value === undefined
+  ) {
+    return "—";
+  }
+
+  return Number(value).toLocaleString();
+}
+
+
+function formatResetTime(value) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+
 function apiErrorMessage(
   data,
   fallback = "Something went wrong."
@@ -157,10 +187,9 @@ function UserMessageContent({ content }) {
     <div className="user-message-wrapper">
       <div
         className={
-          `user-message-body ${
-            isLong && !expanded
-              ? "collapsed"
-              : ""
+          `user-message-body ${isLong && !expanded
+            ? "collapsed"
+            : ""
           }`
         }
       >
@@ -356,6 +385,21 @@ function App() {
   ] = useState("");
 
   const [
+    groqUsage,
+    setGroqUsage,
+  ] = useState(null);
+
+  const [
+    groqUsageLoading,
+    setGroqUsageLoading,
+  ] = useState(false);
+
+  const [
+    groqUsageError,
+    setGroqUsageError,
+  ] = useState("");
+
+  const [
     memories,
     setMemories,
   ] = useState([]);
@@ -425,8 +469,31 @@ function App() {
     setDeleteError,
   ] = useState("");
 
+  const [
+    renameTarget,
+    setRenameTarget,
+  ] = useState(null);
+
+  const [
+    renameTitle,
+    setRenameTitle,
+  ] = useState("");
+
+  const [
+    renamingConversation,
+    setRenamingConversation,
+  ] = useState(false);
+
+  const [
+    renameError,
+    setRenameError,
+  ] = useState("");
+
   const messagesEndRef =
     useRef(null);
+
+  const pendingChatScrollRef =
+    useRef(false);
 
   const composerTextareaRef =
     useRef(null);
@@ -543,6 +610,11 @@ function App() {
     setDeleteTarget(null);
     setDeletingConversationId(null);
     setDeleteError("");
+
+    setRenameTarget(null);
+    setRenameTitle("");
+    setRenamingConversation(false);
+    setRenameError("");
 
     setMemories([]);
     setMemoryInput("");
@@ -731,6 +803,58 @@ function App() {
     } finally {
 
       setSettingsLoading(false);
+    }
+  }
+
+
+  async function loadGroqUsage() {
+
+    const token = getToken();
+
+    if (!token) {
+      return;
+    }
+
+    setGroqUsageLoading(true);
+    setGroqUsageError("");
+
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/api/groq/usage`,
+          {
+            headers:
+              authHeaders(),
+          }
+        );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to load Groq usage."
+          )
+        );
+      }
+
+      setGroqUsage(data);
+
+    } catch (error) {
+      setGroqUsageError(
+        error.message
+        || "Unable to load Groq usage."
+      );
+
+    } finally {
+      setGroqUsageLoading(false);
     }
   }
 
@@ -961,6 +1085,9 @@ function App() {
         data.conversation
       );
 
+      pendingChatScrollRef.current =
+        true;
+
       setMessages(
         data.messages || []
       );
@@ -1017,6 +1144,9 @@ function App() {
       content:
         userMessage,
     };
+
+    pendingChatScrollRef.current =
+      true;
 
     setMessages(
       (current) => [
@@ -1075,7 +1205,7 @@ function App() {
 
         const failedConversation =
           data?.detail
-          ?.conversation;
+            ?.conversation;
 
         if (
           failedConversation
@@ -1163,6 +1293,7 @@ function App() {
     } finally {
 
       setIsLoading(false);
+      loadGroqUsage();
     }
   }
 
@@ -1194,6 +1325,10 @@ function App() {
     setActivePanel(null);
     setSidebarOpen(false);
     setConversationMenuId(null);
+
+    setRenameTarget(null);
+    setRenameTitle("");
+    setRenameError("");
   }
 
 
@@ -1206,6 +1341,111 @@ function App() {
     setConversationMenuId(null);
     setDeleteError("");
     setDeleteTarget(conversation);
+  }
+
+
+  function openRenameChat(
+    conversation,
+    event
+  ) {
+    event?.stopPropagation();
+
+    setConversationMenuId(null);
+    setRenameTarget(conversation);
+    setRenameTitle(
+      conversation?.title || ""
+    );
+    setRenameError("");
+  }
+
+
+  function closeRenameChat() {
+    if (renamingConversation) {
+      return;
+    }
+
+    setRenameTarget(null);
+    setRenameTitle("");
+    setRenameError("");
+  }
+
+
+  async function handleRenameChat(
+    event
+  ) {
+    event?.preventDefault();
+
+    if (
+      !renameTarget
+      || renamingConversation
+    ) {
+      return;
+    }
+
+    const cleanTitle =
+      renameTitle.trim();
+
+    if (!cleanTitle) {
+      setRenameError(
+        "Chat title cannot be empty."
+      );
+      return;
+    }
+
+    setRenamingConversation(true);
+    setRenameError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/conversations/${renameTarget.id}`,
+        {
+          method: "PATCH",
+          headers:
+            authHeaders({
+              "Content-Type":
+                "application/json",
+            }),
+          body:
+            JSON.stringify({
+              title: cleanTitle,
+            }),
+        }
+      );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to rename chat."
+          )
+        );
+      }
+
+      upsertConversation(
+        data.conversation
+      );
+
+      setRenameTarget(null);
+      setRenameTitle("");
+      setRenameError("");
+
+    } catch (error) {
+      setRenameError(
+        error.message
+        || "Unable to rename chat."
+      );
+
+    } finally {
+      setRenamingConversation(false);
+    }
   }
 
 
@@ -1246,7 +1486,7 @@ function App() {
         throw new Error(
           apiErrorMessage(
             data,
-            "Unable to delete conversation."
+            "Unable to delete chat."
           )
         );
       }
@@ -1277,7 +1517,7 @@ function App() {
     } catch (error) {
       setDeleteError(
         error.message
-        || "Unable to delete conversation."
+        || "Unable to delete chat."
       );
 
     } finally {
@@ -1395,6 +1635,7 @@ function App() {
       setMemoryError("");
       setMemoryNotice("");
       loadMemories();
+      loadGroqUsage();
     }
 
     setSidebarOpen(false);
@@ -1554,12 +1795,12 @@ function App() {
 
             <ol>
               <li>
-                Use New conversation when
+                Use New chat when
                 you want a fresh topic.
               </li>
 
               <li>
-                Your real conversations
+                Your real chats
                 automatically appear in
                 the sidebar.
               </li>
@@ -1633,13 +1874,13 @@ function App() {
 
             <details>
               <summary>
-                Does New conversation delete
+                Does New chat delete
                 old chats?
               </summary>
 
               <p>
                 No. It only opens a fresh
-                conversation.
+                chat.
               </p>
             </details>
 
@@ -1729,8 +1970,7 @@ function App() {
               feedbackStatus && (
                 <div
                   className={
-                    `feedback-status ${
-                      feedbackStatus.type
+                    `feedback-status ${feedbackStatus.type
                     }`
                   }
                 >
@@ -1894,12 +2134,25 @@ function App() {
   useEffect(
     () => {
 
-      messagesEndRef
-        .current
-        ?.scrollIntoView({
-          behavior:
-            "smooth",
-        });
+      if (
+        !pendingChatScrollRef.current
+      ) {
+        return;
+      }
+
+      pendingChatScrollRef.current =
+        false;
+
+      window.requestAnimationFrame(
+        () => {
+          messagesEndRef
+            .current
+            ?.scrollIntoView({
+              behavior: "smooth",
+              block: "end",
+            });
+        }
+      );
 
     },
     [
@@ -1980,6 +2233,7 @@ function App() {
       loadSettings();
       loadConversations();
       loadMemories();
+      loadGroqUsage();
 
     },
     [authUser]
@@ -2032,6 +2286,96 @@ function App() {
       )}
 
 
+      {renameTarget && (
+        <div
+          className="rename-modal-overlay"
+          onMouseDown={(event) => {
+            if (
+              event.target
+              === event.currentTarget
+              && !renamingConversation
+            ) {
+              closeRenameChat();
+            }
+          }}
+        >
+          <form
+            className="rename-modal"
+            onSubmit={
+              handleRenameChat
+            }
+            onMouseDown={(event) =>
+              event.stopPropagation()
+            }
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-chat-title"
+          >
+            <h3 id="rename-chat-title">
+              Rename Chat
+            </h3>
+
+            <p>
+              Enter a new name for
+              this chat.
+            </p>
+
+            <input
+              type="text"
+              value={renameTitle}
+              onChange={(event) =>
+                setRenameTitle(
+                  event.target.value
+                )
+              }
+              maxLength={80}
+              autoFocus
+              disabled={
+                renamingConversation
+              }
+              aria-label="Chat title"
+            />
+
+            {renameError && (
+              <div className="rename-error">
+                {renameError}
+              </div>
+            )}
+
+            <div className="rename-modal-actions">
+              <button
+                type="button"
+                className="rename-cancel"
+                onClick={
+                  closeRenameChat
+                }
+                disabled={
+                  renamingConversation
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="rename-save"
+                disabled={
+                  renamingConversation
+                  || !renameTitle.trim()
+                }
+              >
+                {
+                  renamingConversation
+                    ? "Saving..."
+                    : "Save"
+                }
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+
       {deleteTarget && (
         <div
           className="delete-confirm-overlay"
@@ -2052,7 +2396,7 @@ function App() {
             aria-labelledby="delete-conversation-title"
           >
             <h3 id="delete-conversation-title">
-              Delete conversation?
+              Delete Chat?
             </h3>
 
             <p>
@@ -2099,7 +2443,7 @@ function App() {
                 }
               >
                 {deletingConversationId
-                === deleteTarget.id
+                  === deleteTarget.id
                   ? "Deleting..."
                   : "Delete"}
               </button>
@@ -2111,10 +2455,9 @@ function App() {
 
       <aside
         className={
-          `sidebar ${
-            sidebarOpen
-              ? "open"
-              : ""
+          `sidebar ${sidebarOpen
+            ? "open"
+            : ""
           }`
         }
       >
@@ -2153,7 +2496,7 @@ function App() {
           }
         >
           <span>＋</span>
-          New conversation
+          New Chat
         </button>
 
 
@@ -2189,7 +2532,7 @@ function App() {
           {!historyLoading
             && !historyError
             && conversations.length
-              === 0 && (
+            === 0 && (
               <div className="history-state">
                 No conversations yet
               </div>
@@ -2221,22 +2564,20 @@ function App() {
                           conversation.id
                         }
                         className={
-                          `history-entry ${
-                            activeConversationId
+                          `history-entry ${activeConversationId
                             === conversation.id
-                              ? "active"
-                              : ""
+                            ? "active"
+                            : ""
                           }`
                         }
                       >
 
                         <button
                           className={
-                            `history-item ${
-                              activeConversationId
+                            `history-item ${activeConversationId
                               === conversation.id
-                                ? "active"
-                                : ""
+                              ? "active"
+                              : ""
                             }`
                           }
                           onClick={() => {
@@ -2285,26 +2626,54 @@ function App() {
 
                         {conversationMenuId
                           === conversation.id && (
-                          <div
-                            className="conversation-menu"
-                            onClick={(event) =>
-                              event.stopPropagation()
-                            }
-                          >
-                            <button
-                              type="button"
-                              className="conversation-delete-action"
+                            <div
+                              className="conversation-menu"
                               onClick={(event) =>
-                                openDeleteConfirmation(
-                                  conversation,
-                                  event
-                                )
+                                event.stopPropagation()
                               }
                             >
-                              Delete conversation
-                            </button>
-                          </div>
-                        )}
+                              <button
+                                type="button"
+                                className="conversation-delete-action"
+                                onClick={(event) =>
+                                  openDeleteConfirmation(
+                                    conversation,
+                                    event
+                                  )
+                                }
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <path d="M3 6h18v2H3V6zm2 4h14v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V10zm3 2v8h2v-8H8zm4 0v8h2v-8h-2zM9 4V2h6v2h5v2H4V4h5z" />
+                                </svg>
+
+                                <span>Delete</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="conversation-rename-action"
+                                onClick={(event) =>
+                                  openRenameChat(
+                                    conversation,
+                                    event
+                                  )
+                                }
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="currentColor"
+                                >
+                                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" />
+                                </svg>
+
+                                <span>Rename</span>
+                              </button>
+                            </div>
+                          )}
 
                       </div>
                     )
@@ -2322,7 +2691,7 @@ function App() {
           <button
             className={
               activePanel
-              === "settings"
+                === "settings"
                 ? "footer-active"
                 : ""
             }
@@ -2340,7 +2709,7 @@ function App() {
           <button
             className={
               activePanel
-              === "help"
+                === "help"
                 ? "footer-active"
                 : ""
             }
@@ -2417,7 +2786,7 @@ function App() {
                 {
                   activeConversation
                     ?.title
-                  || "New conversation"
+                  || ""
                 }
               </h1>
 
@@ -2441,313 +2810,425 @@ function App() {
         {activePanel
           === "settings" && (
 
-          <section className="info-panel">
+            <section className="info-panel">
 
-            <div className="panel-header">
-
-              <div>
-
-                <span className="panel-label">
-                  PREFERENCES
-                </span>
-
-                <h2>Settings</h2>
-
-                <p>
-                  Manage your DevPilot
-                  workspace preferences.
-                </p>
-
-              </div>
-
-              <button
-                className="panel-close"
-                onClick={() =>
-                  setActivePanel(null)
-                }
-              >
-                ×
-              </button>
-
-            </div>
-
-
-            <div className="settings-list">
-
-              <div className="setting-row">
+              <div className="panel-header">
 
                 <div>
-                  <strong>
-                    Theme
-                  </strong>
 
-                  <span>
-                    {
-                      theme === "dark"
-                        ? (
-                          "Soft charcoal "
-                          + "& blue"
-                        )
-                        : (
-                          "Soft white "
-                          + "& blue"
-                        )
-                    }
+                  <span className="panel-label">
+                    PREFERENCES
                   </span>
-                </div>
 
+                  <h2>Settings</h2>
 
-                <div className="theme-toggle">
-
-                  <button
-                    className={
-                      `theme-option ${
-                        theme
-                        === "light"
-                          ? "active"
-                          : ""
-                      }`
-                    }
-                    onClick={() =>
-                      handleThemeChange(
-                        "light"
-                      )
-                    }
-                    disabled={
-                      settingsLoading
-                    }
-                  >
-                    ☀ Light
-                  </button>
-
-                  <button
-                    className={
-                      `theme-option ${
-                        theme
-                        === "dark"
-                          ? "active"
-                          : ""
-                      }`
-                    }
-                    onClick={() =>
-                      handleThemeChange(
-                        "dark"
-                      )
-                    }
-                    disabled={
-                      settingsLoading
-                    }
-                  >
-                    ◐ Dark
-                  </button>
+                  <p>
+                    Manage your DevPilot
+                    workspace preferences.
+                  </p>
 
                 </div>
+
+                <button
+                  className="panel-close"
+                  onClick={() =>
+                    setActivePanel(null)
+                  }
+                >
+                  ×
+                </button>
 
               </div>
 
 
-              {settingsError && (
-                <div className="settings-error">
-                  {settingsError}
-                </div>
-              )}
+              <div className="settings-list">
 
+                <div className="setting-row">
 
-              <div className="setting-row">
-
-                <div>
-                  <strong>
-                    AI Assistant
-                  </strong>
-
-                  <span>
-                    Developer mode
-                  </span>
-                </div>
-
-                <span className="status-badge">
-                  Active
-                </span>
-
-              </div>
-
-
-              <div className="setting-row">
-
-                <div>
-                  <strong>
-                    Workspace
-                  </strong>
-
-                  <span>
-                    Local SQLite workspace
-                  </span>
-                </div>
-
-                <span className="setting-value">
-                  Local
-                </span>
-
-              </div>
-
-
-              <div className="memory-section">
-
-                <div className="memory-section-header">
                   <div>
-                    <strong>Saved memories</strong>
+                    <strong>
+                      Theme
+                    </strong>
+
                     <span>
-                      Explicit preferences and context DevPilot can reuse in future conversations.
+                      {
+                        theme === "dark"
+                          ? (
+                            "Soft charcoal "
+                            + "& blue"
+                          )
+                          : (
+                            "Soft white "
+                            + "& blue"
+                          )
+                      }
                     </span>
                   </div>
 
-                  <span className="memory-count">
-                    {memories.length}/50
-                  </span>
+
+                  <div className="theme-toggle">
+
+                    <button
+                      className={
+                        `theme-option ${theme
+                          === "light"
+                          ? "active"
+                          : ""
+                        }`
+                      }
+                      onClick={() =>
+                        handleThemeChange(
+                          "light"
+                        )
+                      }
+                      disabled={
+                        settingsLoading
+                      }
+                    >
+                      ☀ Light
+                    </button>
+
+                    <button
+                      className={
+                        `theme-option ${theme
+                          === "dark"
+                          ? "active"
+                          : ""
+                        }`
+                      }
+                      onClick={() =>
+                        handleThemeChange(
+                          "dark"
+                        )
+                      }
+                      disabled={
+                        settingsLoading
+                      }
+                    >
+                      ◐ Dark
+                    </button>
+
+                  </div>
+
                 </div>
 
 
-                <form
-                  className="memory-add-form"
-                  onSubmit={addMemory}
-                >
-                  <input
-                    type="text"
-                    value={memoryInput}
-                    onChange={(event) =>
-                      setMemoryInput(
-                        event.target.value
-                      )
-                    }
-                    maxLength="2000"
-                    placeholder="e.g. Always reply to me in Roman Urdu"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={
-                      memorySaving
-                      || !memoryInput.trim()
-                    }
-                  >
-                    {memorySaving
-                      ? "Saving..."
-                      : "Add memory"}
-                  </button>
-                </form>
-
-
-                <p className="memory-hint">
-                  You can also say “remember this”, “add to memory”, or “yaad rakhna” in chat. DevPilot does not silently save preferences.
-                </p>
-
-
-                {memoryError && (
-                  <div className="memory-status error">
-                    {memoryError}
-                  </div>
-                )}
-
-                {memoryNotice && (
-                  <div className="memory-status success">
-                    {memoryNotice}
+                {settingsError && (
+                  <div className="settings-error">
+                    {settingsError}
                   </div>
                 )}
 
 
-                <div className="memory-list">
-                  {memoryLoading ? (
-                    <div className="memory-empty">
-                      Loading memories...
+                <div className="setting-row">
+
+                  <div>
+                    <strong>
+                      AI Assistant
+                    </strong>
+
+                    <span>
+                      Developer mode
+                    </span>
+                  </div>
+
+                  <span className="status-badge">
+                    Active
+                  </span>
+
+                </div>
+
+
+                <div className="setting-row">
+
+                  <div>
+                    <strong>
+                      Workspace
+                    </strong>
+
+                    <span>
+                      Local SQLite workspace
+                    </span>
+                  </div>
+
+                  <span className="setting-value">
+                    Local
+                  </span>
+
+                </div>
+
+
+                <div className="groq-usage-card">
+
+                  <div className="groq-usage-header">
+                    <div>
+                      <strong>Groq API Usage</strong>
+                      <span>Latest rate-limit snapshot from Groq</span>
                     </div>
-                  ) : memories.length === 0 ? (
-                    <div className="memory-empty">
-                      No saved memories yet.
+
+                    <button
+                      type="button"
+                      className="groq-refresh"
+                      onClick={loadGroqUsage}
+                      disabled={groqUsageLoading}
+                    >
+                      {groqUsageLoading
+                        ? "Refreshing..."
+                        : "Refresh"}
+                    </button>
+                  </div>
+
+                  {groqUsageError ? (
+                    <div className="groq-usage-message error">
+                      {groqUsageError}
+                    </div>
+                  ) : !groqUsage?.available ? (
+                    <div className="groq-usage-message">
+                      {groqUsageLoading
+                        ? "Loading usage..."
+                        : (
+                          groqUsage?.message
+                          || "Usage available after the first AI response."
+                        )}
                     </div>
                   ) : (
-                    memories.map(
-                      (memory) => (
-                        <div
-                          className="memory-item"
-                          key={memory.id}
+                    <>
+                      <div className="groq-usage-meta">
+                        <span>
+                          Model: {groqUsage.model || "—"}
+                        </span>
+
+                        <span
+                          className={
+                            `groq-status ${groqUsage.status
+                              === "rate_limited"
+                              ? "limited"
+                              : "available"
+                            }`
+                          }
                         >
-                          <div>
-                            <small>
-                              {memory.key === "preferred_language"
-                                ? "Language preference"
-                                : "Memory"}
-                            </small>
+                          {groqUsage.status === "rate_limited"
+                            ? "Rate limited"
+                            : "Available"}
+                        </span>
+                      </div>
 
-                            <p>
-                              {memory.value}
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              deleteMemory(
-                                memory.id
-                              )
-                            }
-                            title="Delete memory"
-                            aria-label="Delete memory"
-                          >
-                            ×
-                          </button>
+                      <div className="groq-usage-grid">
+                        <div className="groq-metric">
+                          <span>Daily requests</span>
+                          <strong>
+                            {formatUsageNumber(
+                              groqUsage.requests?.used
+                            )}
+                            {" / "}
+                            {formatUsageNumber(
+                              groqUsage.requests?.limit
+                            )}
+                            {" used"}
+                          </strong>
+                          <small>
+                            {formatUsageNumber(
+                              groqUsage.requests?.remaining
+                            )}
+                            {" remaining · Reset "}
+                            {formatResetTime(
+                              groqUsage.requests?.reset_at
+                            )}
+                          </small>
                         </div>
-                      )
-                    )
+
+                        <div className="groq-metric">
+                          <span>Tokens / minute</span>
+                          <strong>
+                            {formatUsageNumber(
+                              groqUsage.tokens?.used
+                            )}
+                            {" / "}
+                            {formatUsageNumber(
+                              groqUsage.tokens?.limit
+                            )}
+                            {" used"}
+                          </strong>
+                          <small>
+                            {formatUsageNumber(
+                              groqUsage.tokens?.remaining
+                            )}
+                            {" remaining · Reset "}
+                            {formatResetTime(
+                              groqUsage.tokens?.reset_at
+                            )}
+                          </small>
+                        </div>
+                      </div>
+
+                      {groqUsage.retry_after_seconds != null && (
+                        <div className="groq-retry">
+                          Retry after {groqUsage.retry_after_seconds}s
+                        </div>
+                      )}
+                    </>
                   )}
+
+                </div>
+
+
+                <div className="memory-section">
+
+                  <div className="memory-section-header">
+                    <div>
+                      <strong>Saved memories</strong>
+                      <span>
+                        Explicit preferences and context DevPilot can reuse in future conversations.
+                      </span>
+                    </div>
+
+                    <span className="memory-count">
+                      {memories.length}/50
+                    </span>
+                  </div>
+
+
+                  <form
+                    className="memory-add-form"
+                    onSubmit={addMemory}
+                  >
+                    <input
+                      type="text"
+                      value={memoryInput}
+                      onChange={(event) =>
+                        setMemoryInput(
+                          event.target.value
+                        )
+                      }
+                      maxLength="2000"
+                      placeholder="e.g. Always reply to me in Roman Urdu"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={
+                        memorySaving
+                        || !memoryInput.trim()
+                      }
+                    >
+                      {memorySaving
+                        ? "Saving..."
+                        : "Add memory"}
+                    </button>
+                  </form>
+
+
+                  <p className="memory-hint">
+                    You can also say “remember this”, “add to memory”, or “yaad rakhna” in chat. DevPilot does not silently save preferences.
+                  </p>
+
+
+                  {memoryError && (
+                    <div className="memory-status error">
+                      {memoryError}
+                    </div>
+                  )}
+
+                  {memoryNotice && (
+                    <div className="memory-status success">
+                      {memoryNotice}
+                    </div>
+                  )}
+
+
+                  <div className="memory-list">
+                    {memoryLoading ? (
+                      <div className="memory-empty">
+                        Loading memories...
+                      </div>
+                    ) : memories.length === 0 ? (
+                      <div className="memory-empty">
+                        No saved memories yet.
+                      </div>
+                    ) : (
+                      memories.map(
+                        (memory) => (
+                          <div
+                            className="memory-item"
+                            key={memory.id}
+                          >
+                            <div>
+                              <small>
+                                {memory.key === "preferred_language"
+                                  ? "Language preference"
+                                  : "Memory"}
+                              </small>
+
+                              <p>
+                                {memory.value}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                deleteMemory(
+                                  memory.id
+                                )
+                              }
+                              title="Delete memory"
+                              aria-label="Delete memory"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )
+                      )
+                    )}
+                  </div>
+
                 </div>
 
               </div>
 
-            </div>
-
-          </section>
-        )}
+            </section>
+          )}
 
 
         {activePanel
           === "help" && (
 
-          <section className="info-panel">
+            <section className="info-panel">
 
-            <div className="panel-header">
+              <div className="panel-header">
 
-              <div>
+                <div>
 
-                <span className="panel-label">
-                  SUPPORT
-                </span>
+                  <span className="panel-label">
+                    SUPPORT
+                  </span>
 
-                <h2>
-                  Help & feedback
-                </h2>
+                  <h2>
+                    Help & feedback
+                  </h2>
 
-                <p>
-                  Get help with DevPilot
-                  or share your feedback.
-                </p>
+                  <p>
+                    Get help with DevPilot
+                    or share your feedback.
+                  </p>
+
+                </div>
+
+                <button
+                  className="panel-close"
+                  onClick={() =>
+                    setActivePanel(null)
+                  }
+                >
+                  ×
+                </button>
 
               </div>
 
-              <button
-                className="panel-close"
-                onClick={() =>
-                  setActivePanel(null)
-                }
-              >
-                ×
-              </button>
+              {renderHelpContent()}
 
-            </div>
-
-            {renderHelpContent()}
-
-          </section>
-        )}
+            </section>
+          )}
 
 
         {!activePanel
@@ -2756,35 +3237,34 @@ function App() {
             || messages.length > 0
           ) && (
 
-          <section className="chat-area">
+            <section className="chat-area">
 
-            {conversationLoading ? (
+              {conversationLoading ? (
 
-              <div className="chat-loading">
-                Loading conversation...
-              </div>
+                <div className="chat-loading">
+                  Loading conversation...
+                </div>
 
-            ) : (
-              <>
-                {messages.map(
-                  (item) => (
+              ) : (
+                <>
+                  {messages.map(
+                    (item) => (
 
-                    <div
-                      key={item.id}
-                      className={
-                        `chat-message ${
-                          item.role
-                          === "user"
+                      <div
+                        key={item.id}
+                        className={
+                          `chat-message ${item.role
+                            === "user"
                             ? "user-message"
                             : "assistant-message"
-                        }`
-                      }
-                    >
+                          }`
+                        }
+                      >
 
-                      <div className="message-avatar">
+                        <div className="message-avatar">
 
-                        {item.role
-                          === "user"
+                          {item.role
+                            === "user"
                             ? (
                               authUser.username
                                 ?.charAt(0)
@@ -2792,95 +3272,94 @@ function App() {
                               || "U"
                             )
                             : "✦"
-                        }
+                          }
+
+                        </div>
+
+
+                        <div className="message-content">
+
+                          <div className="message-name">
+
+                            {item.role
+                              === "user"
+                              ? "You"
+                              : "DevPilot"}
+
+                          </div>
+
+
+                          <div
+                            className={
+                              `message-text ${item.error
+                                ? "error"
+                                : ""
+                              }`
+                            }
+                          >
+                            {item.role
+                              === "user" ? (
+                              <UserMessageContent
+                                content={item.content}
+                              />
+                            ) : (
+                              <ReactMarkdown
+                                remarkPlugins={[
+                                  remarkGfm
+                                ]}
+                                components={{
+                                  pre: CodeBlock
+                                }}
+                              >
+                                {item.content}
+                              </ReactMarkdown>
+                            )}
+
+                          </div>
+
+                        </div>
 
                       </div>
+                    )
+                  )}
 
+
+                  {isLoading && (
+
+                    <div className="chat-message assistant-message">
+
+                      <div className="message-avatar">
+                        ✦
+                      </div>
 
                       <div className="message-content">
 
                         <div className="message-name">
-
-                          {item.role
-                          === "user"
-                            ? "You"
-                            : "DevPilot"}
-
+                          DevPilot
                         </div>
 
-
-                        <div
-                          className={
-                            `message-text ${
-                              item.error
-                                ? "error"
-                                : ""
-                            }`
-                          }
-                        >
-                              {item.role
-                              === "user" ? (
-                                <UserMessageContent
-                                  content={item.content}
-                                />
-                              ) : (
-                                <ReactMarkdown
-                                  remarkPlugins={[
-                                    remarkGfm
-                                  ]}
-                                  components={{
-                                    pre: CodeBlock
-                                  }}
-                                >
-                                  {item.content}
-                                </ReactMarkdown>
-                              )}
-
+                        <div className="message-text typing">
+                          <span />
+                          <span />
+                          <span />
                         </div>
 
                       </div>
 
                     </div>
-                  )
-                )}
+                  )}
 
+                </>
+              )}
 
-                {isLoading && (
+              <div
+                ref={
+                  messagesEndRef
+                }
+              />
 
-                  <div className="chat-message assistant-message">
-
-                    <div className="message-avatar">
-                      ✦
-                    </div>
-
-                    <div className="message-content">
-
-                      <div className="message-name">
-                        DevPilot
-                      </div>
-
-                      <div className="message-text typing">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-
-                    </div>
-
-                  </div>
-                )}
-
-              </>
-            )}
-
-            <div
-              ref={
-                messagesEndRef
-              }
-            />
-
-          </section>
-        )}
+            </section>
+          )}
 
 
         {!activePanel
@@ -2888,78 +3367,78 @@ function App() {
           && messages.length === 0
           && (
 
-          <section className="workspace">
+            <section className="workspace">
 
-            <div className="welcome">
+              <div className="welcome">
 
-              <div className="welcome-symbol">
-                <span>✦</span>
+                <div className="welcome-symbol">
+                  <span>✦</span>
+                </div>
+
+                <div className="eyebrow">
+                  YOUR DEVELOPER WORKSPACE
+                </div>
+
+                <h2>
+                  What are you
+                  <span>
+                    {" "}building today?
+                  </span>
+                </h2>
+
+                <p>
+                  Ask questions, debug errors,
+                  review code, or get help
+                  with your next development
+                  task.
+                </p>
+
               </div>
 
-              <div className="eyebrow">
-                YOUR DEVELOPER WORKSPACE
-              </div>
 
-              <h2>
-                What are you
-                <span>
-                  {" "}building today?
-                </span>
-              </h2>
+              <div className="suggestions">
 
-              <p>
-                Ask questions, debug errors,
-                review code, or get help
-                with your next development
-                task.
-              </p>
+                {suggestions.map(
+                  (item, index) => (
 
-            </div>
+                    <button
+                      className="suggestion"
+                      key={index}
+                      onClick={() =>
+                        handleSuggestion(
+                          item.text
+                        )
+                      }
+                    >
 
+                      <div className="suggestion-icon">
+                        {item.icon}
+                      </div>
 
-            <div className="suggestions">
+                      <div className="suggestion-content">
 
-              {suggestions.map(
-                (item, index) => (
+                        <strong>
+                          {item.title}
+                        </strong>
 
-                  <button
-                    className="suggestion"
-                    key={index}
-                    onClick={() =>
-                      handleSuggestion(
-                        item.text
-                      )
-                    }
-                  >
+                        <span>
+                          {item.text}
+                        </span>
 
-                    <div className="suggestion-icon">
-                      {item.icon}
-                    </div>
+                      </div>
 
-                    <div className="suggestion-content">
-
-                      <strong>
-                        {item.title}
-                      </strong>
-
-                      <span>
-                        {item.text}
+                      <span className="arrow">
+                        ↗
                       </span>
 
-                    </div>
+                    </button>
+                  )
+                )}
 
-                    <span className="arrow">
-                      ↗
-                    </span>
+              </div>
 
-                  </button>
-                )
-              )}
-
-            </div>
-
-          </section>
-        )}
+            </section>
+          )}
 
 
         {!activePanel && (
@@ -3006,7 +3485,7 @@ function App() {
 
                     if (
                       event.key
-                        === "Enter"
+                      === "Enter"
                       && !event.shiftKey
                     ) {
                       event.preventDefault();

@@ -66,3 +66,8 @@ class MemoryCreateRequest(BaseModel):
         max_length=2000,
     )
 
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(
+        min_length=1,
+        max_length=80,
+    )

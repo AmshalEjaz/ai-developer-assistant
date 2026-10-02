@@ -6,7 +6,15 @@ from fastapi import (
     HTTPException,
     status,
 )
-
+from schemas import (
+    ChatRequest,
+    ConversationRenameRequest,
+    FeedbackRequest,
+    LoginRequest,
+    MemoryCreateRequest,
+    SignupRequest,
+    ThemeUpdateRequest,
+)
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.security import (
@@ -634,7 +642,70 @@ def get_conversation(
         ],
     }
 
+@app.patch(
+    "/api/conversations/{conversation_id}"
+)
+def rename_conversation(
+    conversation_id: int,
+    request: ConversationRenameRequest,
 
+    current_user:
+        User
+        = Depends(require_user),
+
+    db:
+        Session
+        = Depends(get_db),
+):
+
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id
+            == conversation_id,
+
+            Conversation.user_id
+            == current_user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found",
+        )
+
+    clean_title = (
+        request.title
+        .strip()
+    )
+
+    if not clean_title:
+        raise HTTPException(
+            status_code=400,
+            detail="Chat title cannot be empty",
+        )
+
+    conversation.title = (
+        clean_title[:80]
+    )
+
+    conversation.updated_at = (
+        utc_now()
+    )
+
+    db.commit()
+    db.refresh(conversation)
+
+    return {
+        "conversation":
+            serialize_conversation(
+                conversation
+            )
+    }
+
+    
 @app.delete(
     "/api/conversations/{conversation_id}"
 )
