@@ -20,6 +20,9 @@ const MAX_ATTACHMENT_BYTES =
 const ATTACHMENT_ACCEPT =
   ".py,.php,.js,.jsx,.ts,.tsx,.java,.cs,.sql,.json,.html,.css,.md,.txt,.xml,.yml,.yaml,.env.example";
 
+const ACTIVE_CONVERSATION_STORAGE_KEY =
+  "devpilot_active_conversation_id";
+
 
 function formatUsageNumber(value) {
   if (
@@ -359,8 +362,18 @@ function App() {
   ] = useState(false);
 
   const [
+    conversationRestorePending,
+    setConversationRestorePending,
+  ] = useState(true);
+
+  const [
     activeAttachment,
     setActiveAttachment,
+  ] = useState(null);
+
+  const [
+    pendingAttachmentFile,
+    setPendingAttachmentFile,
   ] = useState(null);
 
   const [
@@ -630,6 +643,9 @@ function App() {
     localStorage.removeItem(
       "devpilot_token"
     );
+    localStorage.removeItem(
+      ACTIVE_CONVERSATION_STORAGE_KEY
+    );
 
     setAuthUser(null);
 
@@ -639,6 +655,7 @@ function App() {
     setMessages([]);
     setMessage("");
     setActiveAttachment(null);
+    setPendingAttachmentFile(null);
     setAttachmentUploading(false);
     setAttachmentError("");
 
@@ -769,9 +786,14 @@ function App() {
         );
       }
 
+      const loadedConversations =
+        data.conversations || [];
+
       setConversations(
-        data.conversations || []
+        loadedConversations
       );
+
+      return loadedConversations;
 
     } catch (error) {
 
@@ -779,6 +801,8 @@ function App() {
         error.message
         || "Unable to load conversations."
       );
+
+      return [];
 
     } finally {
 
@@ -1083,6 +1107,7 @@ function App() {
     conversationId
   ) {
 
+    setPendingAttachmentFile(null);
     setConversationLoading(true);
 
     setActivePanel(null);
@@ -1121,6 +1146,11 @@ function App() {
 
       setActiveConversationId(
         data.conversation.id
+      );
+
+      localStorage.setItem(
+        ACTIVE_CONVERSATION_STORAGE_KEY,
+        String(data.conversation.id)
       );
 
       upsertConversation(
@@ -1182,6 +1212,20 @@ function App() {
       return;
     }
 
+    setAttachmentError("");
+    setPendingAttachmentFile(
+      selectedFile
+    );
+  }
+
+
+  async function uploadPendingAttachment(
+    conversationId
+  ) {
+    if (!pendingAttachmentFile) {
+      return null;
+    }
+
     setAttachmentUploading(true);
     setAttachmentError("");
 
@@ -1189,13 +1233,13 @@ function App() {
       const formData = new FormData();
       formData.append(
         "file",
-        selectedFile
+        pendingAttachmentFile
       );
 
-      if (activeConversationId) {
+      if (conversationId) {
         formData.append(
           "conversation_id",
-          String(activeConversationId)
+          String(conversationId)
         );
       }
 
@@ -1210,7 +1254,9 @@ function App() {
 
       if (response.status === 401) {
         handleLogout();
-        return;
+        throw new Error(
+          "Authentication required."
+        );
       }
 
       const data = await response.json();
@@ -1227,6 +1273,10 @@ function App() {
       setActiveConversationId(
         data.conversation.id
       );
+      localStorage.setItem(
+        ACTIVE_CONVERSATION_STORAGE_KEY,
+        String(data.conversation.id)
+      );
       upsertConversation(
         data.conversation
       );
@@ -1234,11 +1284,8 @@ function App() {
         data.attachment
       );
 
-    } catch (error) {
-      setAttachmentError(
-        error.message
-        || "Unable to attach file."
-      );
+      return data;
+
     } finally {
       setAttachmentUploading(false);
     }
@@ -1246,6 +1293,12 @@ function App() {
 
 
   async function removeAttachment() {
+    if (pendingAttachmentFile) {
+      setPendingAttachmentFile(null);
+      setAttachmentError("");
+      return;
+    }
+
     if (
       !activeConversationId
       || !activeAttachment
@@ -1304,50 +1357,69 @@ function App() {
       !userMessage
       || isLoading
       || conversationLoading
+      || attachmentUploading
     ) {
       return;
     }
 
-    const optimisticId =
-      `temp-${Date.now()}`;
-
-    const optimisticMessage = {
-      id:
-        optimisticId,
-
-      role:
-        "user",
-
-      content:
-        userMessage,
-    };
-
-    pendingChatScrollRef.current =
-      true;
-
-    setMessages(
-      (current) => [
-        ...current,
-        optimisticMessage,
-      ]
-    );
-
-    setMessage("");
     setIsLoading(true);
     setActivePanel(null);
 
+    let conversationId =
+      activeConversationId;
+    let sentAttachment = null;
+
     try {
+      if (pendingAttachmentFile) {
+        const uploadResult =
+          await uploadPendingAttachment(
+            conversationId
+          );
+
+        conversationId =
+          uploadResult.conversation.id;
+        sentAttachment =
+          uploadResult.attachment;
+
+        setPendingAttachmentFile(null);
+      }
+
+      const optimisticId =
+        `temp-${Date.now()}`;
+
+      const optimisticMessage = {
+        id:
+          optimisticId,
+
+        role:
+          "user",
+
+        content:
+          userMessage,
+
+        attachment: sentAttachment,
+      };
+
+      pendingChatScrollRef.current =
+        true;
+
+      setMessages(
+        (current) => [
+          ...current,
+          optimisticMessage,
+        ]
+      );
+
+      setMessage("");
 
       const body = {
         message:
           userMessage,
       };
 
-      if (
-        activeConversationId
-      ) {
+      if (conversationId) {
         body.conversation_id =
-          activeConversationId;
+          conversationId;
       }
 
       const response =
@@ -1408,6 +1480,11 @@ function App() {
         data.conversation.id
       );
 
+      localStorage.setItem(
+        ACTIVE_CONVERSATION_STORAGE_KEY,
+        String(data.conversation.id)
+      );
+
       upsertConversation(
         data.conversation
       );
@@ -1442,7 +1519,10 @@ function App() {
           return [
             ...withoutTemporary,
 
-            data.user_message
+            {
+              ...data.user_message,
+              attachment: sentAttachment,
+            }
             || optimisticMessage,
 
             data.message,
@@ -1500,6 +1580,10 @@ function App() {
 
   function handleNewChat() {
 
+    localStorage.removeItem(
+      ACTIVE_CONVERSATION_STORAGE_KEY
+    );
+
     setActiveConversationId(
       null
     );
@@ -1507,6 +1591,7 @@ function App() {
     setMessage("");
     setMessages([]);
     setActiveAttachment(null);
+    setPendingAttachmentFile(null);
     setAttachmentUploading(false);
     setAttachmentError("");
 
@@ -1695,10 +1780,14 @@ function App() {
         activeConversationId
         === conversationId
       ) {
+        localStorage.removeItem(
+          ACTIVE_CONVERSATION_STORAGE_KEY
+        );
         setActiveConversationId(null);
         setMessages([]);
         setMessage("");
         setActiveAttachment(null);
+        setPendingAttachmentFile(null);
         setAttachmentUploading(false);
         setAttachmentError("");
         setIsLoading(false);
@@ -2425,9 +2514,45 @@ function App() {
       }
 
       loadSettings();
-      loadConversations();
       loadMemories();
       loadGroqUsage();
+      setConversationRestorePending(true);
+
+      const restoreConversation =
+        async () => {
+          try {
+            const loaded =
+              (await loadConversations())
+              || [];
+
+            const storedId = Number(
+              localStorage.getItem(
+                ACTIVE_CONVERSATION_STORAGE_KEY
+              )
+            );
+
+            if (
+              storedId
+              && loaded.some(
+                (conversation) =>
+                  conversation.id === storedId
+              )
+            ) {
+              await loadConversation(
+                storedId
+              );
+            } else if (storedId) {
+              localStorage.removeItem(
+                ACTIVE_CONVERSATION_STORAGE_KEY
+              );
+              setActiveConversationId(null);
+            }
+          } finally {
+            setConversationRestorePending(false);
+          }
+        };
+
+      restoreConversation();
 
     },
     [authUser]
@@ -2456,6 +2581,16 @@ function App() {
           setAuthUser
         }
       />
+    );
+  }
+
+
+  if (conversationRestorePending) {
+
+    return (
+      <div className="auth-boot">
+        Loading DevPilot...
+      </div>
     );
   }
 
@@ -3511,6 +3646,25 @@ function App() {
 
                           </div>
 
+                          {item.role === "user"
+                            && item.attachment && (
+                            <div className="message-attachment">
+                              <div className="attachment-chip-icon">
+                                &lt;/&gt;
+                              </div>
+                              <div className="attachment-chip-copy">
+                                <strong>
+                                  {item.attachment.filename}
+                                </strong>
+                                <span>
+                                  {formatFileSize(
+                                    item.attachment.size_bytes
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
                         </div>
 
                       </div>
@@ -3639,7 +3793,7 @@ function App() {
 
           <div className="composer-wrapper">
 
-            {activeAttachment && (
+            {pendingAttachmentFile && (
               <div className="attachment-chip">
                 <div className="attachment-chip-icon">
                   &lt;/&gt;
@@ -3647,11 +3801,11 @@ function App() {
 
                 <div className="attachment-chip-copy">
                   <strong>
-                    {activeAttachment.filename}
+                    {pendingAttachmentFile.name}
                   </strong>
                   <span>
                     {formatFileSize(
-                      activeAttachment.size_bytes
+                      pendingAttachmentFile.size
                     )}
                   </span>
                 </div>

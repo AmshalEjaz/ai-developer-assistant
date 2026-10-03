@@ -2668,7 +2668,7 @@ button {
 
 .assistant-message .message-text {
   max-width: 92%;
-  font-size:13px;
+  font-size: 13px;
 }
 
 .user-message-wrapper {
@@ -3456,6 +3456,19 @@ button {
   box-shadow: 0 5px 18px rgba(30, 64, 175, 0.05);
 }
 
+.message-attachment {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  max-width: 85%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid #dbe6f3;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
 .attachment-chip-icon {
   display: grid;
   place-items: center;
@@ -3522,7 +3535,8 @@ button {
   opacity: 0.45;
 }
 
-.app[data-theme="dark"] .attachment-chip {
+.app[data-theme="dark"] .attachment-chip,
+.app[data-theme="dark"] .message-attachment {
   border-color: #334155;
   background: #172033;
 }
