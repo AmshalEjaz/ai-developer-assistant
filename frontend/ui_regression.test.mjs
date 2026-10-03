@@ -84,3 +84,13 @@ test('settings shows live Groq API usage from the backend', () => {
   assert.match(appJsx, /Refresh/);
   assert.match(appCss, /\.groq-usage-card/);
 });
+
+test('composer supports one active developer file attachment', () => {
+  assert.match(appJsx, /type="file"/);
+  assert.match(appJsx, /handleFileSelect/);
+  assert.match(appJsx, /\/api\/files/);
+  assert.match(appJsx, /activeAttachment/);
+  assert.match(appJsx, /attachment-chip/);
+  assert.match(appJsx, /removeAttachment/);
+  assert.match(appCss, /\.attachment-chip/);
+});

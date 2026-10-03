@@ -132,6 +132,100 @@ class Conversation(Base):
         order_by="Message.id",
     )
 
+    active_file = relationship(
+        "ConversationFile",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+# ============================================================
+# CONVERSATION FILE
+# ============================================================
+
+class ConversationFile(Base):
+    __tablename__ = "conversation_files"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    original_filename = Column(
+        String(255),
+        nullable=False,
+    )
+
+    stored_path = Column(
+        Text,
+        nullable=False,
+    )
+
+    size_bytes = Column(
+        Integer,
+        nullable=False,
+    )
+
+    uploaded_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    conversation = relationship(
+        "Conversation",
+        back_populates="active_file",
+    )
+
+    content_record = relationship(
+        "ConversationFileContent",
+        back_populates="file",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+# ============================================================
+# CONVERSATION FILE CONTENT
+# ============================================================
+
+class ConversationFileContent(Base):
+    __tablename__ = "conversation_file_contents"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    conversation_file_id = Column(
+        Integer,
+        ForeignKey("conversation_files.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    content_text = Column(
+        Text,
+        nullable=False,
+    )
+
+    file = relationship(
+        "ConversationFile",
+        back_populates="content_record",
+    )
+
 
 # ============================================================
 # MESSAGE

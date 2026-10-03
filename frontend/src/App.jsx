@@ -14,6 +14,12 @@ import "./App.css";
 const API_URL =
   "http://127.0.0.1:8000";
 
+const MAX_ATTACHMENT_BYTES =
+  2 * 1024 * 1024;
+
+const ATTACHMENT_ACCEPT =
+  ".py,.php,.js,.jsx,.ts,.tsx,.java,.cs,.sql,.json,.html,.css,.md,.txt,.xml,.yml,.yaml,.env.example";
+
 
 function formatUsageNumber(value) {
   if (
@@ -42,6 +48,21 @@ function formatResetTime(value) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+
+function formatFileSize(value) {
+  const bytes = Number(value || 0);
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 
@@ -338,6 +359,21 @@ function App() {
   ] = useState(false);
 
   const [
+    activeAttachment,
+    setActiveAttachment,
+  ] = useState(null);
+
+  const [
+    attachmentUploading,
+    setAttachmentUploading,
+  ] = useState(false);
+
+  const [
+    attachmentError,
+    setAttachmentError,
+  ] = useState("");
+
+  const [
     isLoading,
     setIsLoading,
   ] = useState(false);
@@ -498,6 +534,9 @@ function App() {
   const composerTextareaRef =
     useRef(null);
 
+  const fileInputRef =
+    useRef(null);
+
 
   const suggestions = [
     {
@@ -599,6 +638,9 @@ function App() {
 
     setMessages([]);
     setMessage("");
+    setActiveAttachment(null);
+    setAttachmentUploading(false);
+    setAttachmentError("");
 
     setIsLoading(false);
     setConversationLoading(false);
@@ -1092,6 +1134,11 @@ function App() {
         data.messages || []
       );
 
+      setActiveAttachment(
+        data.attachment || null
+      );
+      setAttachmentError("");
+
     } catch (error) {
 
       setMessages([
@@ -1114,6 +1161,136 @@ function App() {
     } finally {
 
       setConversationLoading(false);
+    }
+  }
+
+
+  async function handleFileSelect(event) {
+    const selectedFile =
+      event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!selectedFile) {
+      return;
+    }
+
+    if (selectedFile.size > MAX_ATTACHMENT_BYTES) {
+      setAttachmentError(
+        "File is too large. Maximum size is 2 MB."
+      );
+      return;
+    }
+
+    setAttachmentUploading(true);
+    setAttachmentError("");
+
+    try {
+      const formData = new FormData();
+      formData.append(
+        "file",
+        selectedFile
+      );
+
+      if (activeConversationId) {
+        formData.append(
+          "conversation_id",
+          String(activeConversationId)
+        );
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/files`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: formData,
+        }
+      );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to attach file."
+          )
+        );
+      }
+
+      setActiveConversationId(
+        data.conversation.id
+      );
+      upsertConversation(
+        data.conversation
+      );
+      setActiveAttachment(
+        data.attachment
+      );
+
+    } catch (error) {
+      setAttachmentError(
+        error.message
+        || "Unable to attach file."
+      );
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
+
+  async function removeAttachment() {
+    if (
+      !activeConversationId
+      || !activeAttachment
+      || attachmentUploading
+    ) {
+      return;
+    }
+
+    setAttachmentUploading(true);
+    setAttachmentError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/conversations/${activeConversationId}/file`,
+        {
+          method: "DELETE",
+          headers: authHeaders(),
+        }
+      );
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          apiErrorMessage(
+            data,
+            "Unable to remove file."
+          )
+        );
+      }
+
+      setActiveAttachment(null);
+
+    } catch (error) {
+      setAttachmentError(
+        error.message
+        || "Unable to remove file."
+      );
+    } finally {
+      setAttachmentUploading(false);
     }
   }
 
@@ -1241,6 +1418,17 @@ function App() {
         );
       }
 
+      if (
+        Object.prototype.hasOwnProperty.call(
+          data,
+          "attachment"
+        )
+      ) {
+        setActiveAttachment(
+          data.attachment || null
+        );
+      }
+
       setMessages(
         (current) => {
 
@@ -1318,6 +1506,9 @@ function App() {
 
     setMessage("");
     setMessages([]);
+    setActiveAttachment(null);
+    setAttachmentUploading(false);
+    setAttachmentError("");
 
     setIsLoading(false);
     setConversationLoading(false);
@@ -1507,6 +1698,9 @@ function App() {
         setActiveConversationId(null);
         setMessages([]);
         setMessage("");
+        setActiveAttachment(null);
+        setAttachmentUploading(false);
+        setAttachmentError("");
         setIsLoading(false);
         setConversationLoading(false);
         setActivePanel(null);
@@ -3445,13 +3639,68 @@ function App() {
 
           <div className="composer-wrapper">
 
+            {activeAttachment && (
+              <div className="attachment-chip">
+                <div className="attachment-chip-icon">
+                  &lt;/&gt;
+                </div>
+
+                <div className="attachment-chip-copy">
+                  <strong>
+                    {activeAttachment.filename}
+                  </strong>
+                  <span>
+                    {formatFileSize(
+                      activeAttachment.size_bytes
+                    )}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="attachment-remove"
+                  onClick={removeAttachment}
+                  disabled={attachmentUploading}
+                  aria-label="Remove attached file"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            {attachmentError && (
+              <div className="attachment-error">
+                {attachmentError}
+              </div>
+            )}
+
             <div className="composer">
 
+              <input
+                ref={fileInputRef}
+                className="attachment-input"
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                onChange={handleFileSelect}
+              />
+
               <button
+                type="button"
                 className="attach"
-                aria-label="Attach"
+                aria-label="Attach developer file"
+                title="Attach one code/text file (max 2 MB)"
+                disabled={
+                  attachmentUploading
+                  || isLoading
+                  || conversationLoading
+                }
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
               >
-                ＋
+                {attachmentUploading
+                  ? "…"
+                  : "＋"}
               </button>
 
 

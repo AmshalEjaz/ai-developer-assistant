@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
-
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import (
     Depends,
     FastAPI,
+    File,
+    Form,
     HTTPException,
+    UploadFile,
     status,
 )
 from schemas import (
@@ -29,6 +34,13 @@ from sqlalchemy.orm import Session
 from agent import get_ai_response
 from groq_usage import get_groq_usage_snapshot
 from memory import classify_memory_text, extract_explicit_memory
+from file_workspace import (
+    allowed_upload_filename,
+    conversation_workspace,
+    delete_conversation_workspace,
+    save_active_file,
+)
+from tools import MAX_UPLOAD_BYTES
 
 from auth import (
     create_access_token,
@@ -45,6 +57,8 @@ from database import (
 
 from models import (
     Conversation,
+    ConversationFile,
+    ConversationFileContent,
     Feedback,
     Message,
     User,
@@ -63,10 +77,17 @@ from schemas import (
 
 
 # ============================================================
-# DATABASE
+# DATABASE / WORKSPACE
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
+
+_workspace_root_raw = os.getenv("WORKSPACE_ROOT")
+WORKSPACE_ROOT = (
+    Path(_workspace_root_raw).expanduser().resolve()
+    if _workspace_root_raw
+    else None
+)
 
 
 # ============================================================
@@ -165,6 +186,66 @@ def serialize_memory(
         "value": memory.value,
         "created_at": serialize_datetime(memory.created_at),
         "updated_at": serialize_datetime(memory.updated_at),
+    }
+
+
+def serialize_attachment(
+    attachment: ConversationFile | None,
+):
+    if not attachment:
+        return None
+
+    return {
+        "id": attachment.id,
+        "conversation_id": attachment.conversation_id,
+        "filename": attachment.original_filename,
+        "size_bytes": attachment.size_bytes,
+        "uploaded_at": serialize_datetime(attachment.uploaded_at),
+    }
+
+
+def attachment_absolute_path(
+    attachment: ConversationFile | None,
+) -> Path | None:
+    if not attachment or not WORKSPACE_ROOT:
+        return None
+
+    stored_path = str(attachment.stored_path or "")
+    if stored_path.startswith("db://"):
+        return None
+
+    root = WORKSPACE_ROOT.resolve()
+    candidate = (root / stored_path).resolve()
+
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+
+    return candidate
+
+
+def tool_context_for_conversation(
+    conversation: Conversation,
+) -> dict:
+    attachment = conversation.active_file
+    if not attachment:
+        return {}
+
+    if attachment.content_record is not None:
+        return {
+            "active_file_name": attachment.original_filename,
+            "active_file_content": attachment.content_record.content_text,
+        }
+
+    path = attachment_absolute_path(attachment)
+    if not path:
+        return {}
+
+    return {
+        "workspace_path": str(path.parent),
+        "active_file_path": str(path),
+        "active_file_name": attachment.original_filename,
     }
 
 
@@ -640,6 +721,11 @@ def get_conversation(
             for message
             in messages
         ],
+
+        "attachment":
+            serialize_attachment(
+                conversation.active_file
+            ),
     }
 
 @app.patch(
@@ -741,6 +827,16 @@ def delete_conversation(
             ),
         )
 
+    if WORKSPACE_ROOT:
+        try:
+            delete_conversation_workspace(
+                WORKSPACE_ROOT,
+                user_id=current_user.id,
+                conversation_id=conversation.id,
+            )
+        except OSError:
+            pass
+
     db.delete(conversation)
     db.commit()
 
@@ -748,6 +844,159 @@ def delete_conversation(
         "deleted": True,
         "conversation_id": conversation_id,
     }
+
+
+# ============================================================
+# CONVERSATION FILES
+# ============================================================
+
+@app.post("/api/files")
+async def upload_conversation_file(
+    file: UploadFile = File(...),
+    conversation_id: int | None = Form(default=None),
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    filename = Path(file.filename or "").name
+    if not allowed_upload_filename(filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Upload a developer code/text file only.",
+        )
+
+    if conversation_id:
+        conversation = (
+            db.query(Conversation)
+            .filter(
+                Conversation.id == conversation_id,
+                Conversation.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    else:
+        conversation = Conversation(
+            user_id=current_user.id,
+            title="New Chat",
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds the 2 MB limit.")
+
+    try:
+        content_text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded developer files must be UTF-8 text.",
+        )
+
+    # Database is the source of truth. The workspace copy is optional so a
+    # Windows path/permission problem never prevents a valid upload.
+    stored_path = f"db://conversation/{conversation.id}/{filename}"
+
+    if WORKSPACE_ROOT:
+        workspace = conversation_workspace(
+            WORKSPACE_ROOT,
+            user_id=current_user.id,
+            conversation_id=conversation.id,
+        )
+
+        try:
+            saved_path = save_active_file(workspace, filename, content)
+            stored_path = (
+                saved_path.resolve()
+                .relative_to(WORKSPACE_ROOT.resolve())
+                .as_posix()
+            )
+        except OSError:
+            # Keep the database-backed attachment even if the optional local
+            # workspace cannot be written.
+            pass
+
+    attachment = conversation.active_file
+
+    if attachment:
+        attachment.original_filename = filename
+        attachment.stored_path = stored_path
+        attachment.size_bytes = len(content)
+        attachment.uploaded_at = utc_now()
+    else:
+        attachment = ConversationFile(
+            conversation_id=conversation.id,
+            original_filename=filename,
+            stored_path=stored_path,
+            size_bytes=len(content),
+            uploaded_at=utc_now(),
+        )
+        db.add(attachment)
+        db.flush()
+
+    db.flush()
+
+    content_record = attachment.content_record
+    if content_record:
+        content_record.content_text = content_text
+    else:
+        db.add(
+            ConversationFileContent(
+                conversation_file_id=attachment.id,
+                content_text=content_text,
+            )
+        )
+
+    conversation.updated_at = utc_now()
+    db.commit()
+    db.refresh(conversation)
+    db.refresh(attachment)
+
+    return {
+        "conversation": serialize_conversation(conversation),
+        "attachment": serialize_attachment(attachment),
+    }
+
+
+@app.delete("/api/conversations/{conversation_id}/file")
+def delete_conversation_file(
+    conversation_id: int,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    attachment = conversation.active_file
+    if not attachment:
+        return {"deleted": True, "conversation_id": conversation_id}
+
+    path = attachment_absolute_path(attachment)
+    if path:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            raise HTTPException(status_code=500, detail="Unable to remove the attached file.")
+
+    db.delete(attachment)
+    conversation.updated_at = utc_now()
+    db.commit()
+
+    return {"deleted": True, "conversation_id": conversation_id}
 
 
 # ============================================================
@@ -930,6 +1179,10 @@ def chat(
         .all()
     )
 
+    is_new_conversation = (
+        len(previous_messages) == 0
+    )
+
     ai_context = [
         {
             "role": message.role,
@@ -984,6 +1237,9 @@ def chat(
     ]
 
     generated_title = None
+    tool_context = tool_context_for_conversation(
+        conversation
+    )
 
     try:
         if is_new_conversation:
@@ -994,11 +1250,13 @@ def chat(
                 ai_context,
                 memories=memory_context,
                 include_chat_title=True,
+                tool_context=tool_context,
             )
         else:
             ai_response = get_ai_response(
                 ai_context,
                 memories=memory_context,
+                tool_context=tool_context,
             )
 
     except Exception:
@@ -1075,6 +1333,11 @@ def chat(
             if memory_saved
             else None
         ),
+
+        "attachment":
+            serialize_attachment(
+                conversation.active_file
+            ),
     }
 
 

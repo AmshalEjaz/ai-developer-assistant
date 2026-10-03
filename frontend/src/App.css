@@ -788,29 +788,17 @@ button {
 
   scroll-behavior: smooth;
 
-  scrollbar-width: thin;
-  scrollbar-color: #cbdcf2 transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 
-/* Chrome / Edge scrollbar */
+/* Keep chat scrolling enabled while hiding the visual scrollbar. */
 
 .chat-area::-webkit-scrollbar {
-  width: 7px;
-}
-
-.chat-area::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-area::-webkit-scrollbar-thumb {
-  background: #cbdcf2;
-
-  border-radius: 10px;
-}
-
-.chat-area::-webkit-scrollbar-thumb:hover {
-  background: #abc6e8;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 
@@ -867,7 +855,6 @@ button {
 
 .message-content {
   flex: 1;
-
   min-width: 0;
 }
 
@@ -1701,7 +1688,7 @@ button {
   .message-text {
     max-width: 100%;
 
-    font-size: 14px;
+    font-size: 12px;
   }
 
 
@@ -1967,7 +1954,7 @@ button {
 
 .message-text h4 {
   margin: 7px 0 4px;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* Bold */
@@ -2676,10 +2663,12 @@ button {
 
 .user-message .message-text {
   max-width: min(76%, 760px);
+  font-size: 12px;
 }
 
 .assistant-message .message-text {
   max-width: 92%;
+  font-size:13px;
 }
 
 .user-message-wrapper {
@@ -3376,7 +3365,7 @@ button {
 
   color: #ffffff;
 
-  font-size: 14px;
+  font-size: 12px;
   outline: none;
 }
 
@@ -3444,4 +3433,132 @@ button {
 .rename-cancel:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* =========================
+   FILE ATTACHMENT
+========================= */
+
+.attachment-input {
+  display: none;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: min(520px, 100%);
+  margin: 0 0 8px 4px;
+  padding: 8px 9px;
+  border: 1px solid #dbe6f3;
+  border-radius: 11px;
+  background: #ffffff;
+  box-shadow: 0 5px 18px rgba(30, 64, 175, 0.05);
+}
+
+.attachment-chip-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #eef5ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.attachment-chip-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.attachment-chip-copy strong {
+  overflow: hidden;
+  max-width: 390px;
+  color: #334155;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip-copy span {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.attachment-remove {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  margin-left: 2px;
+  border-radius: 7px;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.attachment-remove:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #dc2626;
+}
+
+.attachment-remove:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.attachment-error {
+  margin: 0 0 7px 5px;
+  color: #dc2626;
+  font-size: 11px;
+}
+
+.attach:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.app[data-theme="dark"] .attachment-chip {
+  border-color: #334155;
+  background: #172033;
+}
+
+.app[data-theme="dark"] .attachment-chip-icon {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.app[data-theme="dark"] .attachment-chip-copy strong {
+  color: #e2e8f0;
+}
+
+.app[data-theme="dark"] .attachment-chip-copy span {
+  color: #94a3b8;
+}
+
+.app[data-theme="dark"] .attachment-remove {
+  color: #94a3b8;
+}
+
+.app[data-theme="dark"] .attachment-remove:hover:not(:disabled) {
+  background: #263348;
+  color: #fca5a5;
+}
+.user-message .message-text {
+  background: #eff6ff;
+  border-color: #dbeafe;
+  font-size: 13px;
+}
+.user-message,
+.user-bubble,
+.message.user,
+.user-message p,
+.user-bubble p,
+.message.user p {
+  font-size: 13px !important;
+  line-height: 1.5;
 }
