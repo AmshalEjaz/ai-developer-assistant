@@ -15,8 +15,12 @@ load_dotenv()
 
 
 api_key = os.getenv("GROQ_API_KEY")
+
 MODEL_NAME = "openai/gpt-oss-120b"
-MAX_TOOL_CALLS = 5
+
+MAX_TOOL_CALLS = 3
+MAX_HISTORY_MESSAGES = 8
+
 
 client = Groq(api_key=api_key) if api_key else None
 
@@ -63,12 +67,21 @@ Your behavior:
 18. If an attached file is relevant, use read_file in bounded chunks instead of asking for the whole file to be pasted.
 19. You may make multiple tool calls when needed, but stop as soon as you have enough evidence.
 20. Never invent a tool result. If a tool returns an error, either recover with another safe tool call or explain the limitation clearly.
+
+DevPilot capability rules:
+- Do not confuse "Can I send/upload you an image?" with "Can you fetch an image from the internet?"
+- If the user asks whether they can upload an image, answer according to the application's actual upload capabilities.
+- Current version supports code/text file uploads only unless image upload/vision support is explicitly enabled.
+- Do not claim you can view images unless image input is actually provided to the model.
+- Do not offer image-download code unless the user specifically asks how to download an image.
 """
 
 
 CHAT_TITLE_INSTRUCTION = """
 This is the first message of a new chat.
+
 Before the actual answer, output exactly one metadata line in this format:
+
 [[CHAT_TITLE: <short title>]]
 
 Title rules:
@@ -81,55 +94,139 @@ Title rules:
 """
 
 
-def parse_chat_title_response(content: str) -> tuple[str, str | None]:
+PLANNING_INSTRUCTION = """
+Task planning behavior:
+
+- For simple questions, answer directly without creating a plan.
+- For complex or multi-step tasks, first determine internally:
+  1. What the user is trying to achieve.
+  2. What information is already available.
+  3. Whether one or more tools are actually required.
+  4. The safest and shortest sequence of actions.
+- Execute the required steps in order.
+- Re-evaluate after each tool result before deciding the next action.
+- Stop calling tools as soon as enough evidence is available.
+- If a tool fails, use the returned error to decide whether a safe recovery is possible.
+- Do not repeatedly call the same tool with effectively identical arguments.
+- Do not expose private chain-of-thought or hidden reasoning.
+- When useful for a complex task, provide only a short user-facing action plan or summary, not internal reasoning.
+"""
+
+
+def parse_chat_title_response(
+    content: str,
+) -> tuple[str, str | None]:
     """Extract hidden chat-title metadata from a first-turn AI response."""
+
     text = str(content or "")
+
     match = re.match(
         r"^\s*\[\[CHAT_TITLE:\s*(.*?)\s*\]\]\s*(?:\r?\n)?",
         text,
         flags=re.IGNORECASE,
     )
+
     if not match:
         return text.strip(), None
-    title = " ".join(match.group(1).split()).strip(" \"'`#*-")
+
+    title = " ".join(
+        match.group(1).split()
+    ).strip(" \"'`#*-")
+
     answer = text[match.end():].strip()
+
     if not title or not answer:
         return text.strip(), None
+
     if len(title) > 50:
         title = title[:50].rstrip()
+
     return answer, title
 
 
-def _capture_completion(request_args: dict):
+def _capture_completion(
+    request_args: dict,
+):
     try:
-        raw_response = client.chat.completions.with_raw_response.create(**request_args)
-        capture_groq_usage(raw_response.headers, model=MODEL_NAME)
+        raw_response = (
+            client.chat.completions
+            .with_raw_response
+            .create(**request_args)
+        )
+
+        capture_groq_usage(
+            raw_response.headers,
+            model=MODEL_NAME,
+        )
+
         return raw_response.parse()
+
     except Exception as exc:
-        raw_error_response = getattr(exc, "response", None)
-        error_headers = getattr(raw_error_response, "headers", None)
-        status_code = getattr(exc, "status_code", None)
+        raw_error_response = getattr(
+            exc,
+            "response",
+            None,
+        )
+
+        error_headers = getattr(
+            raw_error_response,
+            "headers",
+            None,
+        )
+
+        status_code = getattr(
+            exc,
+            "status_code",
+            None,
+        )
+
         if error_headers:
             capture_groq_usage(
                 error_headers,
                 model=MODEL_NAME,
                 rate_limited=(status_code == 429),
             )
+
+        print("\n========== GROQ API ERROR ==========")
+        print("TYPE:", type(exc).__name__)
+        print("STATUS:", status_code)
+        print("ERROR:", repr(exc))
+
+        if error_headers:
+            print(
+                "RETRY-AFTER:",
+                error_headers.get("retry-after"),
+            )
+
+        print("====================================\n")
+
         raise
 
 
-def _tool_call_dict(tool_call) -> dict:
+def _tool_call_dict(
+    tool_call,
+) -> dict:
     return {
         "id": tool_call.id,
-        "type": getattr(tool_call, "type", "function") or "function",
+        "type": getattr(
+            tool_call,
+            "type",
+            "function",
+        ) or "function",
         "function": {
             "name": tool_call.function.name,
-            "arguments": tool_call.function.arguments or "{}",
+            "arguments": (
+                tool_call.function.arguments
+                or "{}"
+            ),
         },
     }
 
 
-def _invalid_arguments_result(tool_name: str, message: str) -> dict:
+def _invalid_arguments_result(
+    tool_name: str,
+    message: str,
+) -> dict:
     return {
         "ok": False,
         "tool": tool_name,
@@ -147,55 +244,145 @@ def get_ai_response(
     include_chat_title: bool = False,
     tool_context: dict | None = None,
 ) -> str | tuple[str, str | None]:
+
     if not client:
-        raise ValueError("GROQ_API_KEY is missing from the .env file")
+        raise ValueError(
+            "GROQ_API_KEY is missing from the .env file"
+        )
 
     if isinstance(messages, str):
-        messages = [{"role": "user", "content": messages}]
+        messages = [
+            {
+                "role": "user",
+                "content": messages,
+            }
+        ]
 
     conversation_messages = []
+
     for item in messages:
         role = item.get("role")
-        content = str(item.get("content", "")).strip()
-        if role not in {"user", "assistant"} or not content:
+
+        content = str(
+            item.get("content", "")
+        ).strip()
+
+        if (
+            role not in {
+                "user",
+                "assistant",
+            }
+            or not content
+        ):
             continue
-        conversation_messages.append({"role": role, "content": content})
+
+        conversation_messages.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
+
+    # Keep Groq context bounded.
+    # Full history remains stored in database/UI.
+    if len(conversation_messages) > MAX_HISTORY_MESSAGES:
+        conversation_messages = (
+            conversation_messages[
+                -MAX_HISTORY_MESSAGES:
+            ]
+        )
 
     latest_user_text = ""
-    for item in reversed(conversation_messages):
+
+    for item in reversed(
+        conversation_messages
+    ):
         if item["role"] == "user":
-            latest_user_text = item["content"]
+            latest_user_text = (
+                item["content"]
+            )
             break
 
     system_prompt = SYSTEM_PROMPT.strip()
+
+    system_prompt += (
+        "\n\nAgent planning instructions:\n"
+        + PLANNING_INSTRUCTION.strip()
+    )
+
     if memories:
         memory_lines = [
             f"- {str(item.get('value', '')).strip()}"
             for item in memories
-            if str(item.get("value", "")).strip()
+            if str(
+                item.get(
+                    "value",
+                    "",
+                )
+            ).strip()
         ]
+
         if memory_lines:
-            system_prompt += "\n\nSaved user memories (explicitly saved by this user):\n" + "\n".join(memory_lines)
+            system_prompt += (
+                "\n\nSaved user memories "
+                "(explicitly saved by this user):\n"
+                + "\n".join(memory_lines)
+            )
 
     if latest_user_text:
-        system_prompt += "\n\nLanguage instruction for this turn:\n" + language_instruction(latest_user_text)
-        system_prompt += "\n\nResponse length instruction for this turn:\n" + response_style_instruction(latest_user_text)
+        system_prompt += (
+            "\n\nLanguage instruction "
+            "for this turn:\n"
+            + language_instruction(
+                latest_user_text
+            )
+        )
+
+        system_prompt += (
+            "\n\nResponse length instruction "
+            "for this turn:\n"
+            + response_style_instruction(
+                latest_user_text
+            )
+        )
 
     if include_chat_title:
-        system_prompt += "\n\nChat title instruction for this first turn:\n" + CHAT_TITLE_INSTRUCTION.strip()
-
-    if tool_context and tool_context.get("active_file_name"):
         system_prompt += (
-            "\n\nAttached file available for this conversation: "
-            + str(tool_context["active_file_name"])
-            + ". Read it with read_file only when relevant."
+            "\n\nChat title instruction "
+            "for this first turn:\n"
+            + CHAT_TITLE_INSTRUCTION.strip()
+        )
+
+    if (
+        tool_context
+        and tool_context.get(
+            "active_file_name"
+        )
+    ):
+        system_prompt += (
+            "\n\nAttached file available "
+            "for this conversation: "
+            + str(
+                tool_context[
+                    "active_file_name"
+                ]
+            )
+            + ". Read it with read_file "
+            "only when relevant."
         )
 
     working_messages = [
-        {"role": "system", "content": system_prompt},
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
         *conversation_messages,
     ]
-    tool_context = tool_context or {}
+
+    tool_context = (
+        tool_context or {}
+    )
+
     total_tool_calls = 0
     force_final = False
 
@@ -204,57 +391,164 @@ def get_ai_response(
             "model": MODEL_NAME,
             "messages": working_messages,
             "temperature": 0.7,
-            "max_completion_tokens": 2048,
+            "max_completion_tokens": 1024,
         }
-        if not force_final:
-            request_args["tools"] = get_tool_schemas()
-            request_args["tool_choice"] = "auto"
 
-        response = _capture_completion(request_args)
-        message = response.choices[0].message
-        tool_calls = list(getattr(message, "tool_calls", None) or [])
+        if not force_final:
+            request_args["tools"] = (
+                get_tool_schemas()
+            )
+
+            request_args[
+                "tool_choice"
+            ] = "auto"
+
+        response = _capture_completion(
+            request_args
+        )
+
+        message = (
+            response
+            .choices[0]
+            .message
+        )
+
+        tool_calls = list(
+            getattr(
+                message,
+                "tool_calls",
+                None,
+            )
+            or []
+        )
 
         if not tool_calls:
-            content = str(getattr(message, "content", "") or "").strip()
+            content = str(
+                getattr(
+                    message,
+                    "content",
+                    "",
+                )
+                or ""
+            ).strip()
+
             if include_chat_title:
-                return parse_chat_title_response(content)
+                return (
+                    parse_chat_title_response(
+                        content
+                    )
+                )
+
             return content
 
-        working_messages.append({
-            "role": "assistant",
-            "content": getattr(message, "content", None) or "",
-            "tool_calls": [_tool_call_dict(call) for call in tool_calls],
-        })
+        working_messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    getattr(
+                        message,
+                        "content",
+                        None,
+                    )
+                    or ""
+                ),
+                "tool_calls": [
+                    _tool_call_dict(
+                        call
+                    )
+                    for call
+                    in tool_calls
+                ],
+            }
+        )
 
-        remaining = MAX_TOOL_CALLS - total_tool_calls
-        for index, tool_call in enumerate(tool_calls):
-            name = tool_call.function.name
+        remaining = (
+            MAX_TOOL_CALLS
+            - total_tool_calls
+        )
+
+        for index, tool_call in enumerate(
+            tool_calls
+        ):
+            name = (
+                tool_call
+                .function
+                .name
+            )
+
             if index >= remaining:
                 result = {
                     "ok": False,
                     "tool": name,
                     "data": None,
                     "error": {
-                        "code": "TOOL_CALL_LIMIT_REACHED",
-                        "message": f"The maximum of {MAX_TOOL_CALLS} tool calls for one message was reached.",
+                        "code": (
+                            "TOOL_CALL_LIMIT_REACHED"
+                        ),
+                        "message": (
+                            f"The maximum of "
+                            f"{MAX_TOOL_CALLS} "
+                            "tool calls for one "
+                            "message was reached."
+                        ),
                     },
                 }
+
             else:
                 try:
-                    arguments = json.loads(tool_call.function.arguments or "{}")
-                    if not isinstance(arguments, dict):
-                        raise ValueError("Tool arguments must be a JSON object.")
-                except (json.JSONDecodeError, ValueError) as exc:
-                    result = _invalid_arguments_result(name, str(exc))
+                    arguments = (
+                        json.loads(
+                            tool_call
+                            .function
+                            .arguments
+                            or "{}"
+                        )
+                    )
+
+                    if not isinstance(
+                        arguments,
+                        dict,
+                    ):
+                        raise ValueError(
+                            "Tool arguments "
+                            "must be a JSON object."
+                        )
+
+                except (
+                    json.JSONDecodeError,
+                    ValueError,
+                ) as exc:
+                    result = (
+                        _invalid_arguments_result(
+                            name,
+                            str(exc),
+                        )
+                    )
+
                 else:
-                    result = execute_tool(name, arguments, tool_context)
-                total_tool_calls += 1
+                    result = execute_tool(
+                        name,
+                        arguments,
+                        tool_context,
+                    )
 
-            working_messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps(result, ensure_ascii=False),
-            })
+                    total_tool_calls += 1
 
-        if total_tool_calls >= MAX_TOOL_CALLS:
+            working_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": (
+                        tool_call.id
+                    ),
+                    "content": json.dumps(
+                        result,
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+
+        if (
+            total_tool_calls
+            >= MAX_TOOL_CALLS
+        ):
             force_final = True
