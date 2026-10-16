@@ -15,3 +15,7 @@ Uploaded files are restricted by extension and size. Workspace cleanup handles s
 ## Secrets
 
 Keep `.env` out of archives and version control. Never include API keys, JWT secrets, database files containing user data, virtual environments, or `node_modules` in a source ZIP. Use `.env.example` with placeholder values for setup documentation.
+
+## Project ZIP analysis
+
+ZIP uploads are read in memory and are not extracted to disk. The analyzer enforces archive, entry-count, and uncompressed-size limits; skips path traversal paths, symlinks, dependency/build folders, binaries, secret filenames, and oversized files; and redacts common secret-like lines. The saved project snapshot contains only selected, sanitized text snippets. Each Groq request receives a smaller query-relevant subset. Secret detection is heuristic, not guaranteed; users should still remove credentials from project archives before uploading. Do not expose the API publicly without additional request rate limiting and deployment hardening.

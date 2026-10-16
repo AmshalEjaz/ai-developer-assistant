@@ -3576,3 +3576,64 @@ button {
   font-size: 13px !important;
   line-height: 1.5;
 }
+/* Saved-chat search */
+.history-search {
+  margin: 14px 0 0;
+  padding: 0 2px;
+}
+
+.history-search-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid #dbe6f4;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.history-search-row input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 7px 6px;
+  color: #1e293b;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+
+.history-search-row button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  color: #2563eb;
+  background: #eff6ff;
+  cursor: pointer;
+}
+
+.history-search-row button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.history-search-note {
+  padding: 7px 8px 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.app[data-theme="dark"] .history-search-row {
+  background: #111827;
+  border-color: #334155;
+}
+
+.app[data-theme="dark"] .history-search-row input {
+  color: #e2e8f0;
+}

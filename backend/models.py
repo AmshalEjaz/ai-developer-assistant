@@ -139,6 +139,13 @@ class Conversation(Base):
         uselist=False,
     )
 
+    project_context = relationship(
+        "ConversationProjectContext",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
 
 # ============================================================
 # CONVERSATION FILE
@@ -224,6 +231,33 @@ class ConversationFileContent(Base):
     file = relationship(
         "ConversationFile",
         back_populates="content_record",
+    )
+
+
+# ============================================================
+# BOUNDED PROJECT CONTEXT FROM ZIP ANALYSIS
+# ============================================================
+
+class ConversationProjectContext(Base):
+    __tablename__ = "conversation_project_contexts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    archive_name = Column(String(255), nullable=False)
+    context_text = Column(Text, nullable=False)
+    file_count = Column(Integer, nullable=False, default=0)
+    characters_sent = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    conversation = relationship(
+        "Conversation",
+        back_populates="project_context",
     )
 
 

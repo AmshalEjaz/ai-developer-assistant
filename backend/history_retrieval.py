@@ -93,13 +93,18 @@ def retrieve_history_context(
     for _score, conversation, conversation_messages in selected:
         # The database query is newest-first; display messages chronologically.
         recent_messages = list(reversed(conversation_messages[:MAX_MESSAGES_PER_CONVERSATION]))
-        lines = [f"Conversation title: {conversation.title}"]
+        lines = [
+            f"Conversation title: {conversation.title}",
+            f"Conversation created_at (saved database timestamp): {conversation.created_at.isoformat() if conversation.created_at else 'unknown'}",
+            f"Conversation updated_at (saved database timestamp): {conversation.updated_at.isoformat() if conversation.updated_at else 'unknown'}",
+        ]
         for message in recent_messages:
             content = " ".join(str(message.content or "").split())
             if len(content) > MAX_MESSAGE_CHARS:
                 content = content[:MAX_MESSAGE_CHARS].rstrip() + "…"
             if content:
-                lines.append(f"{message.role}: {content}")
+                timestamp = message.created_at.isoformat() if message.created_at else "unknown"
+                lines.append(f"{timestamp} | {message.role}: {content}")
         sections.append("\n".join(lines))
 
     if not sections:

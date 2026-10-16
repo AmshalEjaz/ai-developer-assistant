@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+import zipfile
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import (
@@ -35,6 +36,7 @@ from agent import get_ai_response
 from groq_usage import get_groq_usage_snapshot
 from memory import classify_memory_text, extract_explicit_memory
 from history_retrieval import retrieve_history_context
+from project_zip import inspect_project_zip, select_relevant_project_context, MAX_ARCHIVE_BYTES
 from file_workspace import (
     allowed_upload_filename,
     conversation_workspace,
@@ -60,6 +62,7 @@ from models import (
     Conversation,
     ConversationFile,
     ConversationFileContent,
+    ConversationProjectContext,
     Feedback,
     Message,
     User,
@@ -132,8 +135,9 @@ def utc_now():
 def serialize_datetime(value):
     if not value:
         return None
-
-    return value.isoformat()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def serialize_conversation(
@@ -664,6 +668,43 @@ def list_conversations(
     }
 
 
+@app.get("/api/conversations/search")
+def search_conversations(
+    q: str,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    query = " ".join(str(q or "").split()).strip()[:120]
+    if len(query) < 2:
+        return {"results": []}
+
+    conversations = (
+        db.query(Conversation)
+        .filter(Conversation.user_id == current_user.id)
+        .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+        .limit(500)
+        .all()
+    )
+    if not conversations:
+        return {"results": []}
+
+    # This search is intentionally headline/title-only: users expect the
+    # sidebar search to find a conversation by its displayed chat title.
+    # Keep it local to the database; it must never call an AI provider.
+    needle = query.casefold()
+    results = []
+    for conversation in conversations:
+        title = str(conversation.title or "")
+        if needle in title.casefold():
+            results.append({
+                **serialize_conversation(conversation),
+                "snippet": title,
+            })
+        if len(results) >= 50:
+            break
+    return {"results": results, "query": query}
+
+
 @app.get(
     "/api/conversations/{conversation_id}"
 )
@@ -844,6 +885,161 @@ def delete_conversation(
     return {
         "deleted": True,
         "conversation_id": conversation_id,
+    }
+
+
+@app.get("/api/history/last-activity")
+def last_history_activity(
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.user_id == current_user.id)
+        .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
+        .first()
+    )
+    latest_message = None
+    if conversation:
+        latest_message = (
+            db.query(Message)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Conversation.user_id == current_user.id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .first()
+        )
+    return {
+        "has_history": conversation is not None,
+        "latest_conversation": serialize_conversation(conversation) if conversation else None,
+        "latest_message_at": serialize_datetime(latest_message.created_at) if latest_message else None,
+        "latest_message_role": latest_message.role if latest_message else None,
+        "note": "These timestamps record saved chat activity, not necessarily the date source code was last edited.",
+    }
+
+
+@app.post("/api/project/analyze-zip")
+async def analyze_project_zip(
+    file: UploadFile = File(...),
+    question: str = Form(...),
+    conversation_id: int | None = Form(default=None),
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    filename = Path(file.filename or "").name
+    if not filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Please choose a .zip file.")
+    question = " ".join(str(question or "").split()).strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Add a question about the project ZIP.")
+    if len(question) > 4000:
+        raise HTTPException(status_code=400, detail="Question is too long (maximum 4,000 characters).")
+
+    raw = await file.read(MAX_ARCHIVE_BYTES + 1)
+    if len(raw) > MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail="ZIP exceeds the 15 MB upload limit.")
+    try:
+        inspection = inspect_project_zip(raw, question)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if conversation_id:
+        conversation = (
+            db.query(Conversation)
+            .filter(Conversation.id == conversation_id, Conversation.user_id == current_user.id)
+            .first()
+        )
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+    else:
+        conversation = Conversation(
+            user_id=current_user.id,
+            title=create_conversation_title(question),
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    user_message = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=f"[Project ZIP: {filename}] {question}",
+        created_at=utc_now(),
+    )
+    db.add(user_message)
+    db.commit()
+    db.refresh(user_message)
+
+    file_sections = []
+    for item in inspection["files"]:
+        file_sections.append(f"FILE: {item['path']}\n```\n{item['content']}\n```")
+    project_context = (
+        f"User uploaded project archive {filename}. Only {inspection['file_count']} selected, "
+        f"bounded text files are included ({inspection['characters_sent']} characters total); "
+        "dependencies, binaries, secret files, and most generated files were skipped. "
+        "The ZIP was inspected in memory and never extracted. Do not claim to have inspected files "
+        "that are not listed below.\n\n" + "\n\n---\n\n".join(file_sections)
+    )
+    saved_context = conversation.project_context
+    if saved_context:
+        saved_context.archive_name = filename
+        saved_context.context_text = project_context
+        saved_context.file_count = inspection["file_count"]
+        saved_context.characters_sent = inspection["characters_sent"]
+        saved_context.created_at = utc_now()
+    else:
+        db.add(ConversationProjectContext(
+            conversation_id=conversation.id,
+            archive_name=filename,
+            context_text=project_context,
+            file_count=inspection["file_count"],
+            characters_sent=inspection["characters_sent"],
+            created_at=utc_now(),
+        ))
+    db.commit()
+    memories = get_memories_for_user(db, current_user.id)
+    memory_context = [{"key": item.key, "value": item.value} for item in memories]
+    try:
+        answer = get_ai_response(
+            [{"role": "user", "content": question}],
+            memories=memory_context,
+            project_context=select_relevant_project_context(project_context, question),
+        )
+        if isinstance(answer, tuple):
+            answer = answer[0]
+    except Exception as exc:
+        import logging
+        logging.getLogger("devpilot.ai").exception(
+            "Project ZIP analysis failed (%s)", type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="DevPilot could not analyze the ZIP with Groq or Gemini. Your question was saved; check backend logs and provider quotas, then retry.",
+        )
+
+    assistant_message = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=str(answer),
+        created_at=utc_now(),
+    )
+    conversation.updated_at = utc_now()
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(conversation)
+    db.refresh(assistant_message)
+    db.refresh(user_message)
+    return {
+        "conversation": serialize_conversation(conversation),
+        "user_message": serialize_message(user_message),
+        "message": serialize_message(assistant_message),
+        "analysis": {
+            "files_considered": [item["path"] for item in inspection["files"]],
+            "file_count": inspection["file_count"],
+            "characters_sent": inspection["characters_sent"],
+            "skipped_count": inspection["skipped_count"],
+        },
     }
 
 
@@ -1250,6 +1446,14 @@ def chat(
     tool_context = tool_context_for_conversation(
         conversation
     )
+    saved_project_context = (
+        select_relevant_project_context(
+            conversation.project_context.context_text,
+            user_text,
+        )
+        if conversation.project_context
+        else None
+    )
 
     try:
         if is_new_conversation:
@@ -1262,6 +1466,7 @@ def chat(
                 history_context=history_context,
                 include_chat_title=True,
                 tool_context=tool_context,
+                project_context=saved_project_context,
             )
         else:
             ai_response = get_ai_response(
@@ -1269,23 +1474,25 @@ def chat(
                 memories=memory_context,
                 history_context=history_context,
                 tool_context=tool_context,
+                project_context=saved_project_context,
             )
 
-    except Exception:
-        # User message stays saved.
+    except Exception as exc:
+        # Keep the user-facing error generic, but log the real cause locally
+        # so provider quota/configuration problems can be diagnosed.
+        import logging
+        logging.getLogger("devpilot.ai").exception(
+            "All configured AI providers failed (%s)",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=502,
             detail={
                 "message": (
-                    "DevPilot could not get an "
-                    "AI response right now. "
-                    "Please try again."
+                    "DevPilot could not get an AI response from Groq or Gemini. "
+                    "Check backend logs and provider quotas, then try again."
                 ),
-
-                "conversation":
-                    serialize_conversation(
-                        conversation
-                    ),
+                "conversation": serialize_conversation(conversation),
             },
         )
 

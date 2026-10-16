@@ -50,12 +50,18 @@ Open the local URL printed by Vite. Keep `package.json` and `package-lock.json`;
 
 DevPilot stores conversations, messages, and explicitly saved user memories in its local SQLite database (`backend/devpilot.db`). When a user asks about a previous chat, or asks a question that matches older discussion topics, the backend searches only that logged-in user's saved conversations and adds a bounded set of relevant excerpts to the AI context. The active conversation is excluded from historical retrieval. If the requested detail is not present in retrieved history, DevPilot is instructed not to invent it.
 
-The memory feature and historical chat search are separate: saved memories hold durable notes/preferences, while historical retrieval finds details from actual past messages.
+The memory feature and historical chat search are separate: saved memories hold durable notes/preferences, while historical retrieval finds details from actual past messages. The sidebar also supports searching saved conversation titles and message text. Date answers use saved timestamps as evidence of chat activity; they are not proof of the last code edit unless a code-edit record exists.
+
+## Project ZIP analysis and Groq usage
+
+Attach a `.zip` file (maximum 15 MB) and ask a specific question. DevPilot inspects it in memory without extracting it to disk, skips secrets, dependency folders, binaries, and oversized files, and redacts common secret-like lines. It keeps a bounded project snapshot in the conversation database for follow-up questions, but selects only a few relevant files and at most about 12,000 characters for each Groq request. This reduces token use; it cannot guarantee a particular Groq rate limit because model usage and provider limits vary. ZIP analysis supports text/source files, not visual inspection of images or PDFs.
+
+Search saved chats from the sidebar by entering at least two characters and pressing Enter or the search icon. Search results are scoped to the signed-in user.
 
 Run backend regression tests from `backend/` with:
 
 ```powershell
-python -m unittest -v test_security_tools.py test_history_retrieval.py
+python -m unittest -v test_security_tools.py test_history_retrieval.py test_project_zip.py
 ```
 
 ## Security note
@@ -67,6 +73,18 @@ Python code execution is disabled by default because AST filtering is not a secu
 This is an active development project. Passing syntax checks or frontend regression tests does not imply that all API flows, AI behavior, or deployment settings have been fully tested.
 
 
+### AI provider fallback (Groq → Gemini)
+
+Configure both keys in the project-root `.env` file (next to `README.md`) to enable automatic fallback:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_google_gemini_api_key
+# Optional; defaults to gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+DevPilot tries Groq first for each message. If Groq is unavailable, rate-limited, or out of quota, it tries Gemini. The next message tries Groq again first, so Groq automatically resumes when available. Gemini fallback produces a direct answer and does not execute DevPilot local tools. Keep `.env` private and never commit API keys.
 ## New Conversation
 ![alt text](image.png)
 

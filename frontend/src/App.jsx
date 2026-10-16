@@ -17,8 +17,11 @@ const API_URL =
 const MAX_ATTACHMENT_BYTES =
   2 * 1024 * 1024;
 
+const MAX_ZIP_BYTES =
+  15 * 1024 * 1024;
+
 const ATTACHMENT_ACCEPT =
-  ".py,.php,.js,.jsx,.ts,.tsx,.java,.cs,.sql,.json,.html,.css,.md,.txt,.xml,.yml,.yaml,.env.example";
+  ".py,.php,.js,.jsx,.ts,.tsx,.java,.cs,.sql,.json,.html,.css,.md,.txt,.xml,.yml,.yaml,.env.example,.zip";
 
 const ACTIVE_CONVERSATION_STORAGE_KEY =
   "devpilot_active_conversation_id";
@@ -356,6 +359,11 @@ function App() {
     setHistoryError,
   ] = useState("");
 
+  const [historySearch, setHistorySearch] = useState("");
+  const [historySearchIds, setHistorySearchIds] = useState(null);
+  const [historySearchBusy, setHistorySearchBusy] = useState(false);
+  const [historySearchError, setHistorySearchError] = useState("");
+
   const [
     conversationLoading,
     setConversationLoading,
@@ -579,9 +587,13 @@ function App() {
   ];
 
 
+  const visibleConversations = historySearchIds === null
+    ? conversations
+    : conversations.filter((item) => historySearchIds.includes(item.id));
+
   const historyGroups =
     groupConversations(
-      conversations
+      visibleConversations
     );
 
 
@@ -810,6 +822,53 @@ function App() {
     }
   }
 
+
+  async function searchSavedChats() {
+    const query = historySearch.trim();
+    if (!query) {
+      setHistorySearchIds(null);
+      setHistorySearchError("");
+      return;
+    }
+    if (query.length < 2) {
+      setHistorySearchError("Type at least 2 characters to search.");
+      return;
+    }
+    setHistorySearchBusy(true);
+    setHistorySearchError("");
+    try {
+      const response = await fetch(
+        `${API_URL}/api/conversations/search?q=${encodeURIComponent(query)}`,
+        { headers: authHeaders() }
+      );
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(data, "Unable to search saved chats."));
+      }
+      const results = data.results || [];
+      setHistorySearchIds(results.map((item) => item.id));
+      // Refresh titles/timestamps from the search response without discarding other chats.
+      setConversations((current) => current.map((item) => {
+        const match = results.find((result) => result.id === item.id);
+        return match ? { ...item, ...match } : item;
+      }));
+      if (!results.length) setHistorySearchError("No matching saved chats found.");
+    } catch (error) {
+      setHistorySearchError(error.message || "Unable to search saved chats.");
+    } finally {
+      setHistorySearchBusy(false);
+    }
+  }
+
+  function clearSavedChatSearch() {
+    setHistorySearch("");
+    setHistorySearchIds(null);
+    setHistorySearchError("");
+  }
 
   async function loadSettings() {
 
@@ -1205,9 +1264,13 @@ function App() {
       return;
     }
 
-    if (selectedFile.size > MAX_ATTACHMENT_BYTES) {
+    const isZip = selectedFile.name.toLowerCase().endsWith(".zip");
+    const sizeLimit = isZip ? MAX_ZIP_BYTES : MAX_ATTACHMENT_BYTES;
+    if (selectedFile.size > sizeLimit) {
       setAttachmentError(
-        "File is too large. Maximum size is 2 MB."
+        isZip
+          ? "ZIP is too large. Maximum size is 15 MB."
+          : "File is too large. Maximum size is 2 MB."
       );
       return;
     }
@@ -1370,6 +1433,42 @@ function App() {
     let sentAttachment = null;
 
     try {
+      if (pendingAttachmentFile && pendingAttachmentFile.name.toLowerCase().endsWith(".zip")) {
+        const formData = new FormData();
+        formData.append("file", pendingAttachmentFile);
+        formData.append("question", userMessage);
+        if (conversationId) formData.append("conversation_id", String(conversationId));
+        const zipResponse = await fetch(`${API_URL}/api/project/analyze-zip`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: formData,
+        });
+        if (zipResponse.status === 401) {
+          handleLogout();
+          return;
+        }
+        const zipData = await zipResponse.json();
+        if (!zipResponse.ok) {
+          throw new Error(apiErrorMessage(zipData, "Unable to analyze project ZIP."));
+        }
+        setPendingAttachmentFile(null);
+        setMessage("");
+        setActiveConversationId(zipData.conversation.id);
+        localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, String(zipData.conversation.id));
+        upsertConversation(zipData.conversation);
+        pendingChatScrollRef.current = true;
+        setMessages((current) => [
+          ...current,
+          zipData.user_message,
+          {
+            ...zipData.message,
+            content: `${zipData.message.content}\n\n---\n\n**Project scan:** ${zipData.analysis.file_count} relevant text files sent to Groq (${zipData.analysis.characters_sent.toLocaleString()} characters). Dependencies, binaries, and secret files were skipped.`,
+          },
+        ]);
+        setAttachmentError("");
+        return;
+      }
+
       if (pendingAttachmentFile) {
         const uploadResult =
           await uploadPendingAttachment(
@@ -2829,6 +2928,32 @@ function App() {
         </button>
 
 
+        <div className="history-search">
+          <div className="history-search-row">
+            <input
+              type="search"
+              value={historySearch}
+              placeholder="Search saved chats..."
+              aria-label="Search saved chats"
+              onChange={(event) => {
+                setHistorySearch(event.target.value);
+                if (!event.target.value.trim()) clearSavedChatSearch();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") searchSavedChats();
+                if (event.key === "Escape") clearSavedChatSearch();
+              }}
+            />
+            <button type="button" onClick={searchSavedChats} disabled={historySearchBusy} aria-label="Search chats">
+              {historySearchBusy ? "…" : "⌕"}
+            </button>
+            {historySearchIds !== null && (
+              <button type="button" onClick={clearSavedChatSearch} aria-label="Clear chat search">×</button>
+            )}
+          </div>
+          {historySearchError && <div className="history-search-note">{historySearchError}</div>}
+        </div>
+
         <div className="history">
 
           {historyLoading && (
@@ -2860,10 +2985,10 @@ function App() {
 
           {!historyLoading
             && !historyError
-            && conversations.length
+            && visibleConversations.length
             === 0 && (
               <div className="history-state">
-                No conversations yet
+                {historySearchIds !== null ? "No matching saved chats" : "No conversations yet"}
               </div>
             )}
 
@@ -3842,7 +3967,7 @@ function App() {
                 type="button"
                 className="attach"
                 aria-label="Attach developer file"
-                title="Attach one code/text file (max 2 MB)"
+                title="Attach a code/text file (2 MB) or project ZIP (15 MB)"
                 disabled={
                   attachmentUploading
                   || isLoading
