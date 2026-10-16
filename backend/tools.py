@@ -21,6 +21,8 @@ MAX_PYTHON_CODE_CHARS = 12000
 MAX_PYTHON_OUTPUT_CHARS = 8000
 PYTHON_TIMEOUT_SECONDS = 5
 MAX_SEARCH_RESULTS = 5
+# AST filtering is not a security sandbox. Execution is opt-in until an OS/container sandbox is configured.
+UNSANDBOXED_PYTHON_ENV = "DEVPILOT_ENABLE_UNSANDBOXED_PYTHON"
 
 ALLOWED_TEXT_EXTENSIONS = {
     ".py", ".php", ".js", ".jsx", ".ts", ".tsx", ".java", ".cs", ".sql",
@@ -273,6 +275,15 @@ def _trim_output(text: str) -> tuple[str, bool]:
 
 def run_python(arguments: dict, context: dict) -> dict:
     del context
+    # Python AST checks cannot reliably prevent sandbox escapes. Fail closed unless
+    # the operator explicitly accepts running snippets under the backend's OS user.
+    if os.getenv(UNSANDBOXED_PYTHON_ENV, "").strip().lower() not in {"1", "true", "yes"}:
+        return tool_error(
+            "run_python",
+            "PYTHON_EXECUTION_DISABLED",
+            "Python execution is disabled because AST restrictions are not a security sandbox. "
+            "Configure an OS/container sandbox before enabling code execution."
+        )
     code = str(arguments.get("code", ""))
     if not code.strip():
         return tool_error("run_python", "EMPTY_CODE", "No Python code was provided.")
@@ -357,7 +368,7 @@ TOOL_REGISTRY = {
         "handler": analyze_code,
     },
     "run_python": {
-        "description": "Execute a small restricted Python snippet for calculation, debugging, or verification. Imports, file access, and shell execution are disabled.",
+        "description": "Execute a small Python snippet only when the operator explicitly enables it. AST checks are defense-in-depth, not a security sandbox; do not enable on a server without OS/container isolation.",
         "parameters": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"], "additionalProperties": False},
         "handler": run_python,
     },

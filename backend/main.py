@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from agent import get_ai_response
 from groq_usage import get_groq_usage_snapshot
 from memory import classify_memory_text, extract_explicit_memory
+from history_retrieval import retrieve_history_context
 from file_workspace import (
     allowed_upload_filename,
     conversation_workspace,
@@ -1236,6 +1237,15 @@ def chat(
         for memory in memories
     ]
 
+    # Search this user's older saved chats for relevant context. The active
+    # conversation is excluded, and the retriever enforces user ownership.
+    history_context = retrieve_history_context(
+        db,
+        current_user.id,
+        user_text,
+        exclude_conversation_id=conversation.id,
+    )
+
     generated_title = None
     tool_context = tool_context_for_conversation(
         conversation
@@ -1249,6 +1259,7 @@ def chat(
             ) = get_ai_response(
                 ai_context,
                 memories=memory_context,
+                history_context=history_context,
                 include_chat_title=True,
                 tool_context=tool_context,
             )
@@ -1256,6 +1267,7 @@ def chat(
             ai_response = get_ai_response(
                 ai_context,
                 memories=memory_context,
+                history_context=history_context,
                 tool_context=tool_context,
             )
 

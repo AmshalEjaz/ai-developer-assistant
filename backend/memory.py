@@ -116,3 +116,43 @@ def extract_explicit_memory(text: str) -> dict[str, str] | None:
         return classify_memory_text(suffix_match.group(1))
 
     return None
+
+# Signals that the user is explicitly asking DevPilot to recall older chats.
+HISTORY_RECALL_RE = re.compile(
+    r"\b(?:previous|earlier|old|last|past)\s+(?:chat|conversation|discussion|message|history)\b|"
+    r"\b(?:chat|conversation|discussion|message)\s+(?:we had|from before|before this|history)\b|"
+    r"\bwhat\s+(?:did we|did i|have we|was)\b.{0,70}\b(?:discuss|talk|say|tell|mention|chat|conversation|project|decide)\b|"
+    r"\b(?:do you remember|remember when|recall|our last chat|my last chat)\b|"
+    r"\b(?:pichli|pehli|purani|pichlay|pichle)\s+(?:chat|conversation|baat|guftagu|message)\b|"
+    r"\b(?:yaad hai|yaad ha|yaad karo|yaad kro|hum ne baat|maine bataya|mainay bataya|pichli baat)\b",
+    re.IGNORECASE,
+)
+
+HISTORY_STOP_WORDS = {
+    "a", "about", "after", "again", "all", "am", "an", "and", "any", "are", "as", "at",
+    "be", "because", "been", "before", "being", "but", "by", "can", "could", "did", "do",
+    "does", "for", "from", "had", "has", "have", "he", "her", "here", "how", "i", "if",
+    "in", "is", "it", "its", "me", "my", "of", "on", "or", "our", "please", "say", "she",
+    "tell", "that", "the", "their", "them", "there", "these", "they", "this", "to", "was",
+    "we", "were", "what", "when", "where", "which", "who", "why", "will", "with", "would",
+    "you", "your", "do", "kya", "kia", "ma", "main", "mujhe", "mujhy", "tum", "tumne", "ap",
+    "aap", "ka", "ke", "ki", "ko", "tha", "thi", "hain", "hai", "ho", "hum", "ne", "sa",
+    "se", "bary", "bara", "batao", "bata", "bataya", "yaad", "kro", "kar", "kr", "tha", "thi",
+}
+
+
+def is_history_recall_request(text: str) -> bool:
+    """Identify explicit requests to retrieve information from older conversations."""
+    return bool(HISTORY_RECALL_RE.search(str(text or "").strip()))
+
+
+def history_search_terms(text: str) -> set[str]:
+    """Extract meaningful terms for lightweight, local keyword matching."""
+    tokens = re.findall(r"[a-zA-Z0-9_./:-]{2,}", str(text or "").lower())
+    return {
+        token.strip("._/:-")
+        for token in tokens
+        if token.strip("._/:-") not in HISTORY_STOP_WORDS
+        and len(token.strip("._/:-")) >= 2
+    }
+

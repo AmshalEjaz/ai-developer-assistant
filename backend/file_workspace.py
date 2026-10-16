@@ -38,7 +38,11 @@ def save_active_file(workspace: Path, filename: str, content: bytes) -> Path:
     workspace = Path(workspace).expanduser().resolve()
     workspace.mkdir(parents=True, exist_ok=True)
     for child in workspace.iterdir():
-        if child.is_file() or child.is_symlink():
+        # Check symlinks first: Path.is_dir()/is_file() follow symlinks and can
+        # otherwise lead cleanup to treat an external target as workspace content.
+        if child.is_symlink():
+            child.unlink(missing_ok=True)
+        elif child.is_file():
             child.unlink(missing_ok=True)
         elif child.is_dir():
             shutil.rmtree(child)
