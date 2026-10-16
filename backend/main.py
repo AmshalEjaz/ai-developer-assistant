@@ -1456,26 +1456,23 @@ def chat(
     )
 
     try:
-        if is_new_conversation:
-            (
-                ai_response,
-                generated_title,
-            ) = get_ai_response(
-                ai_context,
-                memories=memory_context,
-                history_context=history_context,
-                include_chat_title=True,
-                tool_context=tool_context,
-                project_context=saved_project_context,
-            )
-        else:
-            ai_response = get_ai_response(
-                ai_context,
-                memories=memory_context,
-                history_context=history_context,
-                tool_context=tool_context,
-                project_context=saved_project_context,
-            )
+        # Use the same provider request path for new and existing chats.
+        # Previously, a new chat used a special title-generation prompt and
+        # expected a tuple response, while existing chats used a plain string.
+        # Keep title creation local (create_conversation_title above) so a title
+        # formatting/parsing issue cannot break the very first assistant reply.
+        ai_response = get_ai_response(
+            ai_context,
+            memories=memory_context,
+            history_context=history_context,
+            tool_context=tool_context,
+            project_context=saved_project_context,
+        )
+        if isinstance(ai_response, tuple):
+            ai_response = ai_response[0]
+        ai_response = str(ai_response or "").strip()
+        if not ai_response:
+            raise RuntimeError("AI providers returned an empty response.")
 
     except Exception as exc:
         # Keep the user-facing error generic, but log the real cause locally
@@ -1499,14 +1496,6 @@ def chat(
     # --------------------------------
     # SAVE ASSISTANT MESSAGE
     # --------------------------------
-
-    if (
-        is_new_conversation
-        and generated_title
-    ):
-        conversation.title = (
-            generated_title
-        )
 
     assistant_message = Message(
         conversation_id=conversation.id,

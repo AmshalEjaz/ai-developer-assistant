@@ -653,7 +653,12 @@ def _get_gemini_response(
         "contents": contents,
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 1024,
+            # Gemini 2.5 Flash can spend output tokens on internal thinking.
+            # Disable it for this short chat fallback to avoid empty text replies.
+            "thinkingConfig": {
+                "thinkingBudget": 0,
+            },
+            "maxOutputTokens": 2048,
         },
     }
     url = GEMINI_ENDPOINT.format(model=GEMINI_MODEL)
@@ -681,12 +686,33 @@ def _get_gemini_response(
 
     try:
         data = response.json()
-        parts = data["candidates"][0]["content"]["parts"]
-        answer = "\n".join(str(part.get("text", "")) for part in parts if part.get("text")).strip()
-    except (ValueError, KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError("Gemini returned an empty or unexpected response.") from exc
+    except ValueError as exc:
+        raise RuntimeError("Gemini returned invalid JSON.") from exc
+
+    # Inspect all candidates/parts; candidate 0 is not guaranteed to contain
+    # user-visible text. Preserve finish/block reasons for useful backend logs.
+    candidates = data.get("candidates") or []
+    text_parts = []
+    finish_reasons = []
+    for candidate in candidates:
+        finish_reasons.append(str(candidate.get("finishReason") or "unknown"))
+        content = candidate.get("content") or {}
+        for part in content.get("parts") or []:
+            text = part.get("text")
+            if text:
+                text_parts.append(str(text))
+
+    answer = "\n".join(text_parts).strip()
     if not answer:
-        raise RuntimeError("Gemini returned an empty response.")
+        prompt_feedback = data.get("promptFeedback") or {}
+        block_reason = prompt_feedback.get("blockReason")
+        reason_text = (
+            f" finishReason={','.join(finish_reasons)}"
+            if finish_reasons else ""
+        )
+        if block_reason:
+            reason_text += f" blockReason={block_reason}"
+        raise RuntimeError("Gemini returned no text content." + reason_text)
     if include_chat_title:
         return parse_chat_title_response(answer)
     return answer
