@@ -3637,3 +3637,80 @@ button {
 .app[data-theme="dark"] .history-search-row input {
   color: #e2e8f0;
 }
+
+
+/* =========================
+   DEV PILOT WELCOME + LAYOUT REFINEMENT
+   CSS-only layout changes; existing application logic is preserved.
+========================= */
+.app {
+  background: radial-gradient(circle at 52% 18%, rgba(219, 234, 254, .48), transparent 42%), #f4f8ff;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.header {
+  flex-shrink: 0;
+  background: rgba(255,255,255,.82);
+  border-bottom: 1px solid #dbeafe;
+}
+.workspace {
+  width: min(1080px, calc(100% - 64px));
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  justify-content: center;
+  padding: 34px 0 36px;
+  scrollbar-width: thin;
+  scrollbar-color: #b8d2f5 transparent;
+}
+.workspace::-webkit-scrollbar, .history::-webkit-scrollbar, .chat-area::-webkit-scrollbar {
+  width: 8px;
+  display: initial;
+}
+.workspace::-webkit-scrollbar-thumb, .history::-webkit-scrollbar-thumb, .chat-area::-webkit-scrollbar-thumb {
+  background: #c5d9f4;
+  border-radius: 20px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.welcome { margin-bottom: 34px; }
+.welcome-symbol {
+  width: 76px; height: 76px; border-radius: 50%;
+  background: linear-gradient(145deg, #eff6ff, #dbeafe);
+  border: 1px solid #dbeafe; margin-bottom: 20px;
+}
+.welcome-symbol span { font-size: 34px; }
+.welcome h2 { font-size: clamp(30px, 3.2vw, 42px); letter-spacing: -1.25px; color: #102e66; }
+.welcome p { max-width: 590px; font-size: 15px; line-height: 1.7; color: #5b78a8; }
+.suggestions { gap: 14px; }
+.suggestion { min-height: 104px; padding: 20px; border-color: #d7e7fc; border-radius: 16px; background: rgba(255,255,255,.78); }
+.suggestion:hover { border-color: #9ec5fb; box-shadow: 0 10px 26px rgba(37,99,235,.08); }
+.suggestion-icon { flex-shrink: 0; }
+.composer-wrapper { width: min(1080px, calc(100% - 64px)); padding-top: 10px; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
+.composer { border-color: #cfe1fb; border-radius: 17px; padding: 13px; }
+.brand-mark { border-radius: 50%; font-size: 23px; background: #e7f1ff; box-shadow: none; }
+.sidebar { background: linear-gradient(180deg, #f8fbff, #eff6ff); border-right-color: #dbeafe; }
+.history { scrollbar-width: thin; scrollbar-color: #c5d9f4 transparent; }
+@media (max-width: 900px) {
+  .workspace { width: calc(100% - 36px); padding-top: 28px; padding-bottom: 28px; }
+  .composer-wrapper { width: calc(100% - 36px); }
+}
+@media (max-width: 650px) {
+  .workspace { width: calc(100% - 28px); padding: 24px 0 30px; justify-content: flex-start; }
+  .welcome { margin-bottom: 25px; }
+  .welcome-symbol { width: 60px; height: 60px; }
+  .welcome-symbol span { font-size: 27px; }
+  .welcome h2 { font-size: clamp(27px, 7vw, 34px); }
+  .welcome p { font-size: 13px; }
+  .suggestions { grid-template-columns: 1fr; gap: 10px; }
+  .suggestion { min-height: 82px; padding: 15px; }
+  .composer-wrapper { width: calc(100% - 24px); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .history { scrollbar-width: thin; }
+}

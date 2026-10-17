@@ -2892,8 +2892,8 @@ function App() {
 
         <div className="brand">
 
-          <div className="brand-mark">
-            ✦
+          <div className="brand-mark" aria-label="DevPilot logo">
+            🚀
           </div>
 
           <div>
@@ -3844,8 +3844,8 @@ function App() {
 
               <div className="welcome">
 
-                <div className="welcome-symbol">
-                  <span>✦</span>
+                <div className="welcome-symbol" aria-hidden="true">
+                  <span>🚀</span>
                 </div>
 
                 <div className="eyebrow">
@@ -3853,17 +3853,15 @@ function App() {
                 </div>
 
                 <h2>
-                  What are you
+                  Welcome to
                   <span>
-                    {" "}building today?
+                    {" "}DevPilot
                   </span>
                 </h2>
 
                 <p>
-                  Ask questions, debug errors,
-                  review code, or get help
-                  with your next development
-                  task.
+                  Your AI-powered developer assistant. Ask questions, debug errors,
+                  review code, or get help with your next development task.
                 </p>
 
               </div>
