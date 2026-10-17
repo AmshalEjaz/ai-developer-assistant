@@ -91,14 +91,34 @@ def retrieve_history_context(
     selected = ranked[:MAX_CONTEXT_CONVERSATIONS]
     sections = []
     for _score, conversation, conversation_messages in selected:
-        # The database query is newest-first; display messages chronologically.
-        recent_messages = list(reversed(conversation_messages[:MAX_MESSAGES_PER_CONVERSATION]))
+        # Prefer messages that actually match the user's recall query, even if
+        # they are older than the most recent messages in that conversation.
+        # conversation_messages are ordered newest-first from the DB query.
+        scored_messages = []
+        for message in conversation_messages:
+            content_lower = str(message.content or "").lower()
+            message_score = sum(1 for term in query_terms if term in content_lower)
+            if message_score:
+                scored_messages.append((message_score, message))
+
+        if scored_messages:
+            scored_messages.sort(
+                key=lambda item: (item[0], item[1].id),
+                reverse=True,
+            )
+            chosen_messages = [item[1] for item in scored_messages[:MAX_MESSAGES_PER_CONVERSATION]]
+            chosen_messages.sort(key=lambda message: message.id)
+        else:
+            # For broad questions such as "what did we do yesterday?", retain
+            # a small recent excerpt when no searchable keyword can identify a turn.
+            chosen_messages = list(reversed(conversation_messages[:MAX_MESSAGES_PER_CONVERSATION]))
+
         lines = [
             f"Conversation title: {conversation.title}",
             f"Conversation created_at (saved database timestamp): {conversation.created_at.isoformat() if conversation.created_at else 'unknown'}",
             f"Conversation updated_at (saved database timestamp): {conversation.updated_at.isoformat() if conversation.updated_at else 'unknown'}",
         ]
-        for message in recent_messages:
+        for message in chosen_messages:
             content = " ".join(str(message.content or "").split())
             if len(content) > MAX_MESSAGE_CHARS:
                 content = content[:MAX_MESSAGE_CHARS].rstrip() + "…"

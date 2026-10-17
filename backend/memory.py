@@ -119,15 +119,16 @@ def extract_explicit_memory(text: str) -> dict[str, str] | None:
 
 # Signals that the user is explicitly asking DevPilot to recall older chats.
 HISTORY_RECALL_RE = re.compile(
-    r"\b(?:previous|earlier|old|last|past)\s+(?:chat|conversation|discussion|message|history)\b|"
-    r"\b(?:chat|conversation|discussion|message)\s+(?:we had|from before|before this|history)\b|"
-    r"\bwhat\s+(?:did we|did i|have we|was)\b.{0,70}\b(?:discuss|talk|say|tell|mention|chat|conversation|project|decide)\b|"
-    r"\b(?:do you remember|remember when|recall|our last chat|my last chat)\b|"
+    r"\b(?:previous|earlier|old|last|past)\s+(?:chats?|conversations?|discussions?|messages?|history)\b|"
+    r"\b(?:chats?|conversations?|discussions?|messages?)\s+(?:we had|from before|before this|history)\b|"
+    r"\bwhat\s+(?:did we|did i|have we|was)\b.{0,90}\b(?:discuss|talk|say|tell|mention|chat|conversation|project|decide|work|do)\b|"
+    r"\b(?:do you remember|remember when|recall|our last chat|my last chat|you remember)\b|"
     r"\b(?:what|which|kis)\s+(?:date|day|time)\b.{0,90}\b(?:last|work|worked|kaam|project|code|hum)\b|"
     r"\b(?:last|latest)\s+(?:date|day)\s+(?:we\s+)?(?:worked|work|kaam|on)\b|"
-    r"\b(?:hum\s+ne|hum\s+na|ham\s+ne)\b.{0,70}\b(?:date|kaam|project|code|kaam\s+kia)\b|"
-    r"\b(?:pichli|pehli|purani|pichlay|pichle)\s+(?:chat|conversation|baat|guftagu|message)\b|"
-    r"\b(?:yaad hai|yaad ha|yaad karo|yaad kro|hum ne baat|maine bataya|mainay bataya|pichli baat)\b",
+    r"\b(?:hum\s+ne|hum\s+na|ham\s+ne|maine|mana)\b.{0,100}\b(?:date|kaam|project|code|bataya|batai|baat|kaha|likha|share|mention|yaad)\b|"
+    r"\b(?:pichli|pehli|purani|pichlay|pichle|kal wali|kal ki)\s+(?:chat|conversation|baat|guftagu|message)\b|"
+    r"\b(?:yaad hai|yaad ha|yaad ma|yaad karo|yaad kro|yaad nahi|yaad nhii|hum ne baat|maine bataya|mainay bataya|pichli baat)\b|"
+    r"\b(?:i told you|i mentioned|i told|we talked about)\b",
     re.IGNORECASE,
 )
 

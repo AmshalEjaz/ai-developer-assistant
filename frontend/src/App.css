@@ -3714,3 +3714,47 @@ button {
   .composer-wrapper { width: calc(100% - 24px); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
   .history { scrollbar-width: thin; }
 }
+
+
+/* Theme-aware conversation menu: keep Rename readable in both themes. */
+.app[data-theme="light"] .conversation-menu {
+  background: #ffffff;
+  border: 1px solid #d8e3f2;
+  box-shadow: 0 12px 30px rgba(15, 35, 70, 0.16);
+}
+.app[data-theme="light"] .conversation-rename-action {
+  color: #243b5a;
+}
+.app[data-theme="light"] .conversation-rename-action:hover {
+  color: #145fe8;
+  background: #edf4ff;
+}
+.app[data-theme="light"] .conversation-delete-action {
+  color: #dc3545;
+}
+.app[data-theme="light"] .conversation-delete-action:hover {
+  background: #fff0f1;
+}
+.app[data-theme="dark"] .conversation-menu {
+  background: #25282e;
+  border: 1px solid #353941;
+  box-shadow: 0 16px 35px rgba(0, 0, 0, 0.3);
+}
+.app[data-theme="dark"] .conversation-rename-action {
+  color: #f1f5f9;
+}
+.app[data-theme="dark"] .conversation-rename-action:hover {
+  color: #ffffff;
+  background: #343943;
+}
+.app[data-theme="dark"] .conversation-delete-action {
+  color: #ff7b84;
+}
+.app[data-theme="dark"] .conversation-delete-action:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+.conversation-rename-action:focus-visible,
+.conversation-delete-action:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
