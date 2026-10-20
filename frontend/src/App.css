@@ -793,6 +793,41 @@ button {
 }
 
 
+/* Floating control appears only when the reader is away from the latest message. */
+.chat-area {
+  position: relative;
+}
+
+.scroll-to-bottom {
+  position: sticky;
+  bottom: 12px;
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin-top: -48px;
+  border: 1px solid var(--border-color, #dbe5f2);
+  border-radius: 50%;
+  background: var(--panel-bg, #ffffff);
+  color: var(--accent-color, #2563eb);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.scroll-to-bottom:hover {
+  transform: translateY(-1px);
+}
+
+.scroll-to-bottom:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
 /* Keep chat scrolling enabled while hiding the visual scrollbar. */
 
 .chat-area::-webkit-scrollbar {

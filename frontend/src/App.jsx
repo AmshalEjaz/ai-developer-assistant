@@ -549,6 +549,9 @@ function App() {
   const messagesEndRef =
     useRef(null);
 
+  const [showScrollToBottom, setShowScrollToBottom] =
+    useState(false);
+
   const pendingChatScrollRef =
     useRef(false);
 
@@ -3691,7 +3694,15 @@ function App() {
             || messages.length > 0
           ) && (
 
-            <section className="chat-area">
+            <section
+              className="chat-area"
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                const distanceFromBottom =
+                  element.scrollHeight - element.scrollTop - element.clientHeight;
+                setShowScrollToBottom(distanceFromBottom > 180);
+              }}
+            >
 
               {conversationLoading ? (
 
@@ -3830,6 +3841,24 @@ function App() {
                   messagesEndRef
                 }
               />
+
+              {showScrollToBottom && (
+                <button
+                  type="button"
+                  className="scroll-to-bottom"
+                  aria-label="Scroll to latest message"
+                  title="Scroll to latest message"
+                  onClick={() => {
+                    messagesEndRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "end",
+                    });
+                    setShowScrollToBottom(false);
+                  }}
+                >
+                  ↓
+                </button>
+              )}
 
             </section>
           )}

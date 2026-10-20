@@ -94,3 +94,13 @@ test('composer supports one active developer file attachment', () => {
   assert.match(appJsx, /removeAttachment/);
   assert.match(appCss, /\.attachment-chip/);
 });
+
+
+test('chat provides a floating scroll-to-latest control when away from bottom', () => {
+  assert.match(appJsx, /showScrollToBottom/);
+  assert.match(appJsx, /distanceFromBottom > 180/);
+  assert.match(appJsx, /aria-label="Scroll to latest message"/);
+  assert.match(appJsx, /messagesEndRef\.current\?\.scrollIntoView/);
+  assert.match(appCss, /\.scroll-to-bottom\s*\{/);
+  assert.match(appCss, /\.scroll-to-bottom:focus-visible/);
+});
