@@ -108,3 +108,15 @@ The application stores account, conversation, memory, settings, and feedback dat
 - Python execution remains disabled by default until a real OS/container sandbox is implemented and reviewed.
 - Do not expose the development server to the public internet. This project is intended to run locally; no deployment steps are included.
 - Before treating this as production-ready, finish API integration tests, adversarial file tests, and a security review of request limits, CORS, secrets, and tool access.
+
+
+
+
+## New Conversation
+![alt text](image.png)
+
+## Setting
+![alt text](image-1.png)
+
+## Help & Feedback
+![alt text](image-2.png)
