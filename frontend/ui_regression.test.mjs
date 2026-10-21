@@ -96,11 +96,18 @@ test('composer supports one active developer file attachment', () => {
 });
 
 
-test('chat provides a floating scroll-to-latest control when away from bottom', () => {
-  assert.match(appJsx, /showScrollToBottom/);
-  assert.match(appJsx, /distanceFromBottom > 180/);
-  assert.match(appJsx, /aria-label="Scroll to latest message"/);
-  assert.match(appJsx, /messagesEndRef\.current\?\.scrollIntoView/);
-  assert.match(appCss, /\.scroll-to-bottom\s*\{/);
-  assert.match(appCss, /\.scroll-to-bottom:focus-visible/);
+test('settings exposes persistent response verbosity and stack preferences', () => {
+  assert.match(appJsx, /responseVerbosity/);
+  assert.match(appJsx, /preferredStack/);
+  assert.match(appJsx, /behaviorPreferences/);
+  assert.match(appJsx, /\/api\/settings\/preferences/);
+  assert.match(appJsx, /Save preferences/);
+  assert.match(appCss, /\.settings-control/);
+});
+
+test('admin feedback viewer is only offered to an allowlisted account', () => {
+  assert.match(appJsx, /authUser\?\.is_admin/);
+  assert.match(appJsx, /\/api\/admin\/feedback/);
+  assert.match(appJsx, /admin-feedback-list/);
+  assert.match(appCss, /\.admin-feedback-item/);
 });

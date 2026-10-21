@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import ast
 import json
 import os
-import subprocess
-import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -22,7 +18,6 @@ MAX_PYTHON_OUTPUT_CHARS = 8000
 PYTHON_TIMEOUT_SECONDS = 5
 MAX_SEARCH_RESULTS = 5
 # AST filtering is not a security sandbox. Execution is opt-in until an OS/container sandbox is configured.
-UNSANDBOXED_PYTHON_ENV = "DEVPILOT_ENABLE_UNSANDBOXED_PYTHON"
 
 ALLOWED_TEXT_EXTENSIONS = {
     ".py", ".php", ".js", ".jsx", ".ts", ".tsx", ".java", ".cs", ".sql",
@@ -243,83 +238,19 @@ def analyze_code(arguments: dict, context: dict) -> dict:
     })
 
 
-FORBIDDEN_PYTHON_CALLS = {"__import__", "breakpoint", "compile", "eval", "exec", "getattr", "globals", "help", "input", "locals", "open", "setattr", "vars"}
-FORBIDDEN_ATTRIBUTE_NAMES = {"system", "popen", "spawn", "fork", "remove", "unlink", "rmdir", "chmod", "chown", "kill", "connect", "bind", "listen", "accept"}
-
-
-def _validate_python_code(code: str) -> str | None:
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as error:
-        return f"Python syntax error on line {error.lineno}: {error.msg}"
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            return "Python imports are disabled in the restricted runner."
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FORBIDDEN_PYTHON_CALLS:
-            return f"{node.func.id}() is not allowed in the restricted runner."
-        if isinstance(node, ast.Attribute):
-            if node.attr.startswith("__"):
-                return "Dunder attribute access is disabled in the restricted runner."
-            if node.attr in FORBIDDEN_ATTRIBUTE_NAMES:
-                return f"Attribute '{node.attr}' is not allowed in the restricted runner."
-        if isinstance(node, ast.Name) and node.id in {"__builtins__", "__loader__", "__spec__"}:
-            return f"Name '{node.id}' is not allowed in the restricted runner."
-    return None
-
-
-def _trim_output(text: str) -> tuple[str, bool]:
-    if len(text) <= MAX_PYTHON_OUTPUT_CHARS:
-        return text, False
-    return text[:MAX_PYTHON_OUTPUT_CHARS] + "\n...[output truncated]", True
-
 
 def run_python(arguments: dict, context: dict) -> dict:
-    del context
-    # Python AST checks cannot reliably prevent sandbox escapes. Fail closed unless
-    # the operator explicitly accepts running snippets under the backend's OS user.
-    if os.getenv(UNSANDBOXED_PYTHON_ENV, "").strip().lower() not in {"1", "true", "yes"}:
-        return tool_error(
-            "run_python",
-            "PYTHON_EXECUTION_DISABLED",
-            "Python execution is disabled because AST restrictions are not a security sandbox. "
-            "Configure an OS/container sandbox before enabling code execution."
-        )
-    code = str(arguments.get("code", ""))
-    if not code.strip():
-        return tool_error("run_python", "EMPTY_CODE", "No Python code was provided.")
-    if len(code) > MAX_PYTHON_CODE_CHARS:
-        return tool_error("run_python", "CODE_TOO_LARGE", "The Python snippet is too large to execute.")
-    safety_error = _validate_python_code(code)
-    if safety_error:
-        return tool_error("run_python", "UNSAFE_PYTHON", safety_error)
-    safe_environment = {"PYTHONIOENCODING": "utf-8"}
-    for name in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH"):
-        value = os.environ.get(name)
-        if value:
-            safe_environment[name] = value
-    try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            completed = subprocess.run(
-                [sys.executable, "-I", "-S", "-c", code],
-                cwd=temp_dir,
-                env=safe_environment,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=PYTHON_TIMEOUT_SECONDS,
-                shell=False,
-                check=False,
-            )
-    except subprocess.TimeoutExpired:
-        return tool_error("run_python", "PYTHON_TIMEOUT", f"Python execution exceeded the {PYTHON_TIMEOUT_SECONDS}-second limit.")
-    except Exception:
-        return tool_error("run_python", "PYTHON_EXECUTION_ERROR", "The Python snippet could not be executed.")
-    stdout, stdout_truncated = _trim_output(completed.stdout or "")
-    stderr, stderr_truncated = _trim_output(completed.stderr or "")
-    if completed.returncode != 0:
-        return tool_error("run_python", "PYTHON_RUNTIME_ERROR", "The Python snippet returned an error.", details={"return_code": completed.returncode, "stdout": stdout, "stderr": stderr, "output_truncated": stdout_truncated or stderr_truncated})
-    return tool_success("run_python", {"return_code": completed.returncode, "stdout": stdout, "stderr": stderr, "output_truncated": stdout_truncated or stderr_truncated})
+    del arguments, context
+    # Fail closed. Do not expose an environment-variable escape hatch that can
+    # accidentally enable arbitrary code execution in the API process. A future
+    # sandbox adapter must be implemented and reviewed before this tool is enabled.
+    return tool_error(
+        "run_python",
+        "PYTHON_EXECUTION_DISABLED",
+        "Python execution is disabled until an OS/container-isolated sandbox is configured. "
+        "AST restrictions alone are not a security boundary."
+    )
+
 
 
 def search_documentation(arguments: dict, context: dict) -> dict:

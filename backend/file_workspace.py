@@ -10,7 +10,7 @@ SPECIAL_ALLOWED_FILENAMES = {".env.example"}
 
 
 def allowed_upload_filename(filename: str) -> bool:
-    name = Path(str(filename or "")).name
+    name = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     if not name or name in {".", ".."}:
         return False
     lowered = name.lower()
@@ -20,7 +20,7 @@ def allowed_upload_filename(filename: str) -> bool:
 
 
 def safe_upload_name(filename: str) -> str:
-    name = Path(str(filename or "")).name.strip()
+    name = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not allowed_upload_filename(name):
         raise ValueError("Unsupported file type.")
     return name

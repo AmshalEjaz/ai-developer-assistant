@@ -246,6 +246,7 @@ def _get_groq_ai_response(
     include_chat_title: bool = False,
     tool_context: dict | None = None,
     project_context: str | None = None,
+    user_preferences: dict | None = None,
 ) -> str | tuple[str, str | None]:
 
     if not client:
@@ -338,6 +339,21 @@ def _get_groq_ai_response(
                 "(explicitly saved by this user):\n"
                 + "\n".join(memory_lines)
             )
+
+    if user_preferences:
+        verbosity = str(user_preferences.get("response_verbosity", "balanced"))
+        verbosity_rules = {
+            "concise": "Prefer concise answers and short actionable steps unless the user requests detail.",
+            "balanced": "Use a balanced level of detail appropriate to the task.",
+            "detailed": "Give thorough explanations and structured steps when useful, while avoiding irrelevant repetition.",
+        }
+        system_prompt += "\n\nUser response preference:\n" + verbosity_rules.get(verbosity, verbosity_rules["balanced"])
+        preferred_stack = str(user_preferences.get("preferred_stack", "")).strip()[:120]
+        behavior_preferences = str(user_preferences.get("behavior_preferences", "")).strip()[:500]
+        if preferred_stack:
+            system_prompt += "\nPreferred programming stack (use when relevant, not as a hard restriction): " + preferred_stack
+        if behavior_preferences:
+            system_prompt += "\nAdditional user response preferences: " + behavior_preferences
 
     system_prompt += (
         "\n\nConversation history rules:\n"
@@ -604,6 +620,7 @@ def _get_gemini_response(
     include_chat_title: bool = False,
     tool_context: dict | None = None,
     project_context: str | None = None,
+    user_preferences: dict | None = None,
 ) -> str | tuple[str, str | None]:
     if not GEMINI_API_KEY:
         raise RuntimeError(
@@ -626,6 +643,20 @@ def _get_gemini_response(
         "",
     )
     system_prompt = SYSTEM_PROMPT.strip() + "\n\n" + PLANNING_INSTRUCTION.strip()
+    if user_preferences:
+        verbosity = str(user_preferences.get("response_verbosity", "balanced"))
+        verbosity_rules = {
+            "concise": "Prefer concise answers and short actionable steps unless the user requests detail.",
+            "balanced": "Use a balanced level of detail appropriate to the task.",
+            "detailed": "Give thorough explanations and structured steps when useful, while avoiding irrelevant repetition.",
+        }
+        system_prompt += "\n\nUser response preference:\n" + verbosity_rules.get(verbosity, verbosity_rules["balanced"])
+        preferred_stack = str(user_preferences.get("preferred_stack", "")).strip()[:120]
+        behavior_preferences = str(user_preferences.get("behavior_preferences", "")).strip()[:500]
+        if preferred_stack:
+            system_prompt += "\nPreferred programming stack (use when relevant, not as a hard restriction): " + preferred_stack
+        if behavior_preferences:
+            system_prompt += "\nAdditional user response preferences: " + behavior_preferences
     if memories:
         lines = [f"- {str(item.get('value', '')).strip()}" for item in memories if str(item.get("value", "")).strip()]
         if lines:
@@ -732,6 +763,7 @@ def get_ai_response(
     include_chat_title: bool = False,
     tool_context: dict | None = None,
     project_context: str | None = None,
+    user_preferences: dict | None = None,
 ) -> str | tuple[str, str | None]:
     """Try Groq first, then Gemini automatically if Groq fails.
 
@@ -749,6 +781,7 @@ def get_ai_response(
             include_chat_title=include_chat_title,
             tool_context=tool_context,
             project_context=project_context,
+            user_preferences=user_preferences,
         )
         answer = result[0] if isinstance(result, tuple) else result
         if not str(answer or "").strip():
@@ -769,6 +802,7 @@ def get_ai_response(
                 include_chat_title=include_chat_title,
                 tool_context=tool_context,
                 project_context=project_context,
+                user_preferences=user_preferences,
             )
             logger.info("AI response provider: Gemini fallback")
             return result

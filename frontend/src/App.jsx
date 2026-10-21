@@ -12,7 +12,8 @@ import "./App.css";
 
 
 const API_URL =
-  "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_URL
+  || "http://127.0.0.1:8000";
 
 const MAX_ATTACHMENT_BYTES =
   2 * 1024 * 1024;
@@ -441,6 +442,12 @@ function App() {
     setSettingsError,
   ] = useState("");
 
+  const [responseVerbosity, setResponseVerbosity] = useState("balanced");
+  const [preferredStack, setPreferredStack] = useState("");
+  const [behaviorPreferences, setBehaviorPreferences] = useState("");
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [preferencesSaved, setPreferencesSaved] = useState(false);
+
   const [
     groqUsage,
     setGroqUsage,
@@ -501,6 +508,10 @@ function App() {
     setFeedbackSubmitting,
   ] = useState(false);
 
+  const [adminFeedback, setAdminFeedback] = useState([]);
+  const [adminFeedbackLoading, setAdminFeedbackLoading] = useState(false);
+  const [adminFeedbackError, setAdminFeedbackError] = useState("");
+
   const [
     feedbackStatus,
     setFeedbackStatus,
@@ -548,9 +559,6 @@ function App() {
 
   const messagesEndRef =
     useRef(null);
-
-  const [showScrollToBottom, setShowScrollToBottom] =
-    useState(false);
 
   const pendingChatScrollRef =
     useRef(false);
@@ -920,6 +928,13 @@ function App() {
           : "light";
 
       setTheme(savedTheme);
+      setResponseVerbosity(
+        ["concise", "balanced", "detailed"].includes(data.response_verbosity)
+          ? data.response_verbosity
+          : "balanced"
+      );
+      setPreferredStack(data.preferred_stack || "");
+      setBehaviorPreferences(data.behavior_preferences || "");
 
     } catch (error) {
 
@@ -1911,6 +1926,40 @@ function App() {
   }
 
 
+  async function saveSettingsPreferences() {
+    if (preferencesSaving) return;
+    setPreferencesSaving(true);
+    setPreferencesSaved(false);
+    setSettingsError("");
+    try {
+      const response = await fetch(`${API_URL}/api/settings/preferences`, {
+        method: "PUT",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          response_verbosity: responseVerbosity,
+          preferred_stack: preferredStack.trim(),
+          behavior_preferences: behaviorPreferences.trim(),
+        }),
+      });
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(data, "Unable to save preferences."));
+      }
+      setResponseVerbosity(data.response_verbosity || "balanced");
+      setPreferredStack(data.preferred_stack || "");
+      setBehaviorPreferences(data.behavior_preferences || "");
+      setPreferencesSaved(true);
+    } catch (error) {
+      setSettingsError(error.message || "Unable to save preferences.");
+    } finally {
+      setPreferencesSaving(false);
+    }
+  }
+
   async function handleThemeChange(
     nextTheme
   ) {
@@ -2150,7 +2199,49 @@ function App() {
   }
 
 
+  async function loadAdminFeedback() {
+    setHelpView("admin-feedback");
+    setAdminFeedbackLoading(true);
+    setAdminFeedbackError("");
+    try {
+      const response = await fetch(`${API_URL}/api/admin/feedback?limit=100`, { headers: authHeaders() });
+      if (response.status === 401) { handleLogout(); return; }
+      const data = await response.json();
+      if (!response.ok) throw new Error(apiErrorMessage(data, "Unable to load feedback."));
+      setAdminFeedback(data.items || []);
+      setHelpView("admin-feedback");
+    } catch (error) {
+      setAdminFeedbackError(error.message || "Unable to load feedback.");
+    } finally {
+      setAdminFeedbackLoading(false);
+    }
+  }
+
   function renderHelpContent() {
+
+    if (helpView === "admin-feedback") {
+      return (
+        <div className="help-subview">
+          <button className="help-back" onClick={() => openHelpView("home")}>← Back</button>
+          <div className="help-article">
+            <div className="admin-feedback-heading">
+              <div><h3>Admin feedback</h3><p>Recent feedback and problem reports submitted by users.</p></div>
+              <button type="button" className="groq-refresh" onClick={loadAdminFeedback} disabled={adminFeedbackLoading}>{adminFeedbackLoading ? "Refreshing..." : "Refresh"}</button>
+            </div>
+            {adminFeedbackError && <div className="settings-error">{adminFeedbackError}</div>}
+            {!adminFeedback.length && !adminFeedbackLoading && !adminFeedbackError && <p>No feedback has been submitted yet.</p>}
+            <div className="admin-feedback-list">
+              {adminFeedback.map((item) => (
+                <article className="admin-feedback-item" key={item.id}>
+                  <div><strong>{item.type === "problem" ? "Problem report" : "Feedback"}</strong><span>{item.email || "Unknown user"} · {item.created_at ? new Date(item.created_at).toLocaleString() : "Date unavailable"}</span></div>
+                  <p>{item.message}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (
       helpView === "getting-started"
@@ -2476,6 +2567,13 @@ function App() {
             </small>
           </div>
         </button>
+
+        {authUser?.is_admin && (
+          <button className="help-card" onClick={loadAdminFeedback}>
+            <span>🛡️</span>
+            <div><strong>Admin feedback</strong><small>Review user feedback and problem reports.</small></div>
+          </button>
+        )}
 
       </div>
     );
@@ -2895,8 +2993,8 @@ function App() {
 
         <div className="brand">
 
-          <div className="brand-mark" aria-label="DevPilot logo">
-            🚀
+          <div className="brand-mark" role="img" aria-label="DevPilot logo">
+            ✦
           </div>
 
           <div>
@@ -3396,6 +3494,69 @@ function App() {
                 </div>
 
 
+                <div className="setting-row settings-preference-row">
+                  <div>
+                    <strong>Response detail</strong>
+                    <span>Choose how much explanation DevPilot gives by default.</span>
+                  </div>
+                  <select
+                    className="settings-control"
+                    aria-label="Response detail preference"
+                    value={responseVerbosity}
+                    onChange={(event) => { setResponseVerbosity(event.target.value); setPreferencesSaved(false); }}
+                    disabled={settingsLoading || preferencesSaving}
+                  >
+                    <option value="concise">Concise</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="detailed">Detailed</option>
+                  </select>
+                </div>
+
+                <div className="setting-row settings-preference-row">
+                  <div>
+                    <strong>Preferred programming stack</strong>
+                    <span>Used as helpful context, not a hard restriction.</span>
+                  </div>
+                  <input
+                    className="settings-control stack-control"
+                    aria-label="Preferred programming stack"
+                    placeholder="e.g. React, FastAPI, Laravel"
+                    maxLength={120}
+                    value={preferredStack}
+                    onChange={(event) => { setPreferredStack(event.target.value); setPreferencesSaved(false); }}
+                    disabled={settingsLoading || preferencesSaving}
+                  />
+                </div>
+
+                <div className="setting-row settings-preference-row settings-preference-notes">
+                  <div>
+                    <strong>AI behavior preferences</strong>
+                    <span>Optional instructions, up to 500 characters.</span>
+                  </div>
+                  <textarea
+                    className="settings-control behavior-control"
+                    aria-label="AI behavior preferences"
+                    placeholder="e.g. Explain changes before showing code; avoid unnecessary dependencies."
+                    maxLength={500}
+                    rows={3}
+                    value={behaviorPreferences}
+                    onChange={(event) => { setBehaviorPreferences(event.target.value); setPreferencesSaved(false); }}
+                    disabled={settingsLoading || preferencesSaving}
+                  />
+                </div>
+
+                <div className="preferences-save-row">
+                  <button
+                    type="button"
+                    className="preferences-save-button"
+                    onClick={saveSettingsPreferences}
+                    disabled={settingsLoading || preferencesSaving}
+                  >
+                    {preferencesSaving ? "Saving..." : "Save preferences"}
+                  </button>
+                  {preferencesSaved && <span className="preferences-saved" role="status">Preferences saved</span>}
+                </div>
+
                 <div className="setting-row">
 
                   <div>
@@ -3694,15 +3855,7 @@ function App() {
             || messages.length > 0
           ) && (
 
-            <section
-              className="chat-area"
-              onScroll={(event) => {
-                const element = event.currentTarget;
-                const distanceFromBottom =
-                  element.scrollHeight - element.scrollTop - element.clientHeight;
-                setShowScrollToBottom(distanceFromBottom > 180);
-              }}
-            >
+            <section className="chat-area">
 
               {conversationLoading ? (
 
@@ -3842,24 +3995,6 @@ function App() {
                 }
               />
 
-              {showScrollToBottom && (
-                <button
-                  type="button"
-                  className="scroll-to-bottom"
-                  aria-label="Scroll to latest message"
-                  title="Scroll to latest message"
-                  onClick={() => {
-                    messagesEndRef.current?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "end",
-                    });
-                    setShowScrollToBottom(false);
-                  }}
-                >
-                  ↓
-                </button>
-              )}
-
             </section>
           )}
 
@@ -3874,7 +4009,7 @@ function App() {
               <div className="welcome">
 
                 <div className="welcome-symbol" aria-hidden="true">
-                  <span>🚀</span>
+                  <span>✦</span>
                 </div>
 
                 <div className="eyebrow">

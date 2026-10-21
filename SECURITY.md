@@ -2,20 +2,29 @@
 
 ## Python code execution
 
-DevPilot's Python tool runs snippets in a subprocess and applies AST checks, a timeout, isolated Python mode, and output limits. These checks are defense-in-depth only. **They do not create a secure sandbox**: Python object-model escape techniques and operating-system behavior make in-process/AST restrictions insufficient for untrusted code.
+**Python execution is disabled unconditionally in this build.** The tool returns `PYTHON_EXECUTION_DISABLED`; the former `DEVPILOT_ENABLE_UNSANDBOXED_PYTHON` environment-variable escape hatch has been removed. AST checks are not a sandbox, and running user-provided code inside the API process could expose local files, secrets, network access, and the backend service account.
 
-For safety, Python execution is disabled by default. The tool returns `PYTHON_EXECUTION_DISABLED` unless the operator sets `DEVPILOT_ENABLE_UNSANDBOXED_PYTHON=1` (or `true`/`yes`). Enabling this setting permits code to run with the backend process's operating-system privileges and should only be considered for trusted, local development. Do not enable it for public deployments or untrusted users.
+Before enabling execution for users, implement and review an OS/container-isolated runner with no secrets, no network by default, a minimal/read-only filesystem, a non-privileged identity, CPU/memory/process limits, and a strict wall-clock timeout. Containerization alone is not sufficient unless permissions and resource limits are configured correctly.
 
-Before enabling user-submitted execution in a deployed service, run snippets inside a separately configured OS/container sandbox with no secrets, no network by default, read-only/minimal filesystem access, a non-privileged identity, memory/CPU/process limits, and a strict wall-clock timeout. Containerization alone is not sufficient unless its permissions and resource limits are configured appropriately.
+## File workspace and uploads
 
-## File workspace
+Uploads accept supported developer text/code files only, are limited to 2 MiB, and must decode as UTF-8. Filenames are normalized across Windows/POSIX path separators. The database is the source of truth for attachment text; optional workspace copies are scoped by user and conversation. Workspace cleanup handles symlinks before regular files/directories. File-reading tools require an active attachment and validate workspace containment, extension, and size.
 
-Uploaded files are restricted by extension and size. Workspace cleanup handles symlinks before regular files/directories to avoid following symlink targets while clearing the active-file area. Keep workspace roots private and ensure only the backend service account can modify them.
+Project ZIP uploads are inspected in memory and never extracted. The analyzer enforces archive/entry/content limits and skips traversal paths, symlinks, dependency/build folders, binaries, secret filenames, and oversized files. Common secret-like lines are redacted heuristically; this cannot guarantee that every credential is removed, so users should remove secrets before uploading archives.
 
-## Secrets
+## API guardrails
 
-Keep `.env` out of archives and version control. Never include API keys, JWT secrets, database files containing user data, virtual environments, or `node_modules` in a source ZIP. Use `.env.example` with placeholder values for setup documentation.
+- Protected routes require a valid bearer token and scope conversations, memories, and files to the authenticated user.
+- CORS origins are configurable through `CORS_ORIGINS` and default to local Vite development origins.
+- `MAX_REQUEST_BYTES` controls a request `Content-Length` cap (default 16 MiB). Upload handlers also enforce their own tighter size bounds. A reverse proxy should independently enforce body-size limits for chunked/streamed requests.
+- Sensitive routes have lightweight per-process rate limits. These limits are not shared across workers or machines; public deployments should use a shared limiter/API gateway and a reverse proxy.
+- Baseline `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy` headers are added to normal responses.
+- `/api/admin/feedback` is available only to accounts whose email appears in the comma-separated `ADMIN_EMAILS` environment variable. Keep this variable private and configure only trusted administrators.
 
-## Project ZIP analysis
+## Secrets and local data
 
-ZIP uploads are read in memory and are not extracted to disk. The analyzer enforces archive, entry-count, and uncompressed-size limits; skips path traversal paths, symlinks, dependency/build folders, binaries, secret filenames, and oversized files; and redacts common secret-like lines. The saved project snapshot contains only selected, sanitized text snippets. Each Groq request receives a smaller query-relevant subset. Secret detection is heuristic, not guaranteed; users should still remove credentials from project archives before uploading. Do not expose the API publicly without additional request rate limiting and deployment hardening.
+Keep `.env` out of version control. Never include real API keys, JWT secrets, databases containing user data, virtual environments, or `node_modules` in source archives. Use strong, unique `JWT_SECRET_KEY` values outside local development. Review logs and uploaded project archives for sensitive data before sharing them.
+
+## Remaining production work
+
+The application has unit and API integration coverage, but this does not prove production readiness. Before public deployment, perform a deployment-specific security review, configure a shared rate limiter/reverse proxy, install dependencies and run frontend build/lint, verify provider credentials/quotas, and test the exact production origin and database backup/restore process.

@@ -330,6 +330,24 @@ class UserSettings(Base):
         nullable=False,
     )
 
+    response_verbosity = Column(
+        String(20),
+        default="balanced",
+        nullable=False,
+    )
+
+    preferred_stack = Column(
+        String(120),
+        default="",
+        nullable=False,
+    )
+
+    behavior_preferences = Column(
+        Text,
+        default="",
+        nullable=False,
+    )
+
     updated_at = Column(
         DateTime(timezone=True),
         default=utc_now,

@@ -793,41 +793,6 @@ button {
 }
 
 
-/* Floating control appears only when the reader is away from the latest message. */
-.chat-area {
-  position: relative;
-}
-
-.scroll-to-bottom {
-  position: sticky;
-  bottom: 12px;
-  float: right;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  margin-top: -48px;
-  border: 1px solid var(--border-color, #dbe5f2);
-  border-radius: 50%;
-  background: var(--panel-bg, #ffffff);
-  color: var(--accent-color, #2563eb);
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
-  font-size: 22px;
-  font-weight: 700;
-  cursor: pointer;
-  z-index: 5;
-}
-
-.scroll-to-bottom:hover {
-  transform: translateY(-1px);
-}
-
-.scroll-to-bottom:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.35);
-  outline-offset: 2px;
-}
-
 /* Keep chat scrolling enabled while hiding the visual scrollbar. */
 
 .chat-area::-webkit-scrollbar {
@@ -1306,6 +1271,62 @@ button {
   font-size: 9px;
 }
 
+.settings-preference-row {
+  align-items: flex-start;
+}
+
+.settings-control {
+  box-sizing: border-box;
+  width: min(48%, 320px);
+  min-width: 180px;
+  border: 1px solid #dbe4f0;
+  border-radius: 9px;
+  padding: 9px 10px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.settings-control:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
+}
+
+.behavior-control {
+  resize: vertical;
+  max-width: 48%;
+  min-height: 74px;
+}
+
+.preferences-save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px 18px;
+}
+
+.preferences-save-button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 14px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.preferences-save-button:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.preferences-saved {
+  color: #15803d !important;
+  font-size: 11px !important;
+}
+
 .setting-value {
   padding: 6px 10px;
 
@@ -1347,6 +1368,52 @@ button {
   gap: 10px;
 
   margin-top: 20px;
+}
+
+.admin-feedback-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-feedback-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.admin-feedback-item {
+  padding: 13px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.admin-feedback-item > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.admin-feedback-item strong {
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.admin-feedback-item span {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.admin-feedback-item p {
+  color: #334155;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .help-card {
@@ -2413,6 +2480,16 @@ button {
 .app[data-theme="dark"] .header h1,
 .app[data-theme="dark"] .welcome h2,
 .app[data-theme="dark"] .panel-header h2,
+.app[data-theme="dark"] .settings-control {
+  background: #22252b;
+  border-color: #414650;
+  color: #f1f5f9;
+}
+
+.app[data-theme="dark"] .preferences-saved {
+  color: #86efac !important;
+}
+
 .app[data-theme="dark"] .setting-row strong,
 .app[data-theme="dark"] .message-name,
 .app[data-theme="dark"] .help-article h3,
@@ -2472,6 +2549,20 @@ button {
 .app[data-theme="dark"] .composer,
 .app[data-theme="dark"] .info-panel,
 .app[data-theme="dark"] .message-text,
+.app[data-theme="dark"] .admin-feedback-item {
+  background: #22252b;
+  border-color: #414650;
+}
+
+.app[data-theme="dark"] .admin-feedback-item strong,
+.app[data-theme="dark"] .admin-feedback-item p {
+  color: #e2e8f0;
+}
+
+.app[data-theme="dark"] .admin-feedback-item span {
+  color: #9ca3af;
+}
+
 .app[data-theme="dark"] .help-card {
   background: #25282e;
   border-color: #353941;
@@ -3715,22 +3806,34 @@ button {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-.welcome { margin-bottom: 34px; }
+.welcome { margin-bottom: 26px; }
 .welcome-symbol {
-  width: 76px; height: 76px; border-radius: 50%;
-  background: linear-gradient(145deg, #eff6ff, #dbeafe);
-  border: 1px solid #dbeafe; margin-bottom: 20px;
+  width: 62px; height: 62px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, #3b82f6, #2563eb);
+  border: 1px solid rgba(255,255,255,.12); margin-bottom: 14px;
+  box-shadow: 0 8px 22px rgba(37,99,235,.24);
 }
-.welcome-symbol span { font-size: 34px; }
-.welcome h2 { font-size: clamp(30px, 3.2vw, 42px); letter-spacing: -1.25px; color: #102e66; }
-.welcome p { max-width: 590px; font-size: 15px; line-height: 1.7; color: #5b78a8; }
+.welcome-symbol span { font-size: 31px; line-height: 1; color: #ffffff; }
+.welcome h2 { font-size: clamp(26px, 2.5vw, 34px); line-height: 1.2; letter-spacing: -.8px; color: #102e66; margin: 10px 0 12px; }
+.welcome p { max-width: 590px; font-size: 13px; line-height: 1.55; color: #5b78a8; margin: 0 auto; }
 .suggestions { gap: 14px; }
-.suggestion { min-height: 104px; padding: 20px; border-color: #d7e7fc; border-radius: 16px; background: rgba(255,255,255,.78); }
+.suggestion { min-height: 88px; padding: 16px; border-color: #d7e7fc; border-radius: 16px; background: rgba(255,255,255,.78); }
 .suggestion:hover { border-color: #9ec5fb; box-shadow: 0 10px 26px rgba(37,99,235,.08); }
 .suggestion-icon { flex-shrink: 0; }
 .composer-wrapper { width: min(1080px, calc(100% - 64px)); padding-top: 10px; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
 .composer { border-color: #cfe1fb; border-radius: 17px; padding: 13px; }
-.brand-mark { border-radius: 50%; font-size: 23px; background: #e7f1ff; box-shadow: none; }
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 21px;
+  line-height: 1;
+  box-shadow: 0 7px 18px rgba(37, 99, 235, 0.18);
+}
 .sidebar { background: linear-gradient(180deg, #f8fbff, #eff6ff); border-right-color: #dbeafe; }
 .history { scrollbar-width: thin; scrollbar-color: #c5d9f4 transparent; }
 @media (max-width: 900px) {
@@ -3742,7 +3845,7 @@ button {
   .welcome { margin-bottom: 25px; }
   .welcome-symbol { width: 60px; height: 60px; }
   .welcome-symbol span { font-size: 27px; }
-  .welcome h2 { font-size: clamp(27px, 7vw, 34px); }
+  .welcome h2 { font-size: clamp(24px, 6vw, 30px); }
   .welcome p { font-size: 13px; }
   .suggestions { grid-template-columns: 1fr; gap: 10px; }
   .suggestion { min-height: 82px; padding: 15px; }

@@ -4,6 +4,7 @@ from pydantic import (
     BaseModel,
     EmailStr,
     Field,
+    field_validator,
 )
 
 
@@ -71,3 +72,13 @@ class ConversationRenameRequest(BaseModel):
         min_length=1,
         max_length=80,
     )
+
+class SettingsPreferencesUpdateRequest(BaseModel):
+    response_verbosity: Literal["concise", "balanced", "detailed"] = "balanced"
+    preferred_stack: str = Field(default="", max_length=120)
+    behavior_preferences: str = Field(default="", max_length=500)
+
+    @field_validator("preferred_stack", "behavior_preferences", mode="before")
+    @classmethod
+    def trim_preference_text(cls, value):
+        return value.strip() if isinstance(value, str) else value

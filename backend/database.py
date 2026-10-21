@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -9,7 +10,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DATABASE_FILE = BASE_DIR / "devpilot.db"
+DATABASE_FILE = Path(os.getenv("DATABASE_FILE", str(BASE_DIR / "devpilot.db"))).expanduser().resolve()
+DATABASE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DATABASE_FILE}"
 

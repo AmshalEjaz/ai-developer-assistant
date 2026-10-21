@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 import os
-import zipfile
+import time
+import logging
+from collections import defaultdict, deque
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import (
@@ -12,6 +14,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import JSONResponse
 from schemas import (
     ChatRequest,
     ConversationRenameRequest,
@@ -19,6 +22,7 @@ from schemas import (
     LoginRequest,
     MemoryCreateRequest,
     SignupRequest,
+    SettingsPreferencesUpdateRequest,
     ThemeUpdateRequest,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +46,7 @@ from file_workspace import (
     conversation_workspace,
     delete_conversation_workspace,
     save_active_file,
+    safe_upload_name,
 )
 from tools import MAX_UPLOAD_BYTES
 
@@ -70,14 +75,7 @@ from models import (
     UserSettings,
 )
 
-from schemas import (
-    ChatRequest,
-    FeedbackRequest,
-    LoginRequest,
-    MemoryCreateRequest,
-    SignupRequest,
-    ThemeUpdateRequest,
-)
+load_dotenv()
 
 
 # ============================================================
@@ -85,6 +83,21 @@ from schemas import (
 # ============================================================
 
 Base.metadata.create_all(bind=engine)
+
+# SQLite create_all does not add columns to existing databases. Apply additive
+# settings migrations at startup so upgrades preserve each user's existing data.
+with engine.begin() as _connection:
+    _settings_columns = {
+        row[1] for row in _connection.exec_driver_sql("PRAGMA table_info(user_settings)").fetchall()
+    }
+    _settings_migrations = {
+        "response_verbosity": "ALTER TABLE user_settings ADD COLUMN response_verbosity VARCHAR(20) NOT NULL DEFAULT 'balanced'",
+        "preferred_stack": "ALTER TABLE user_settings ADD COLUMN preferred_stack VARCHAR(120) NOT NULL DEFAULT ''",
+        "behavior_preferences": "ALTER TABLE user_settings ADD COLUMN behavior_preferences TEXT NOT NULL DEFAULT ''",
+    }
+    for _column, _statement in _settings_migrations.items():
+        if _column not in _settings_columns:
+            _connection.exec_driver_sql(_statement)
 
 _workspace_root_raw = os.getenv("WORKSPACE_ROOT")
 WORKSPACE_ROOT = (
@@ -110,18 +123,77 @@ security = HTTPBearer(
 )
 
 
+_configured_cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=_configured_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+# Lightweight per-process throttling and request-size guardrails. For a multi-worker
+# or public deployment, move rate-limit counters to a shared store such as Redis and
+# place a reverse proxy/API gateway in front of the application.
+_RATE_BUCKETS: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+_RATE_LIMITS = {
+    "/api/auth/login": (20, 60),
+    "/api/auth/signup": (10, 60),
+    "/api/chat": (30, 60),
+    "/api/files": (20, 60),
+    "/api/project/analyze-zip": (10, 60),
+}
+_MAX_REQUEST_BYTES = max(1024 * 1024, int(os.getenv("MAX_REQUEST_BYTES", str(16 * 1024 * 1024))))
+
+
+@app.middleware("http")
+async def request_guardrails(request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413, content={"detail": "Request body exceeds the configured size limit."}
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400, content={"detail": "Invalid Content-Length header."}
+            )
+
+    limit = _RATE_LIMITS.get(request.url.path)
+    if limit and request.method in {"POST", "PUT", "PATCH"}:
+        max_requests, window_seconds = limit
+        client_host = request.client.host if request.client else "unknown"
+        key = (client_host, request.url.path)
+        now = time.monotonic()
+        bucket = _RATE_BUCKETS[key]
+        while bucket and now - bucket[0] >= window_seconds:
+            bucket.popleft()
+        if len(bucket) >= max_requests:
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": str(max(1, int(window_seconds - (now - bucket[0]))))},
+                content={"detail": "Too many requests. Please wait before trying again."},
+            )
+        bucket.append(now)
+        if len(_RATE_BUCKETS) > 2048:
+            stale_keys = [key for key, values in _RATE_BUCKETS.items() if not values or now - values[-1] >= 300]
+            for stale_key in stale_keys:
+                _RATE_BUCKETS.pop(stale_key, None)
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
 
 
 # ============================================================
@@ -348,6 +420,15 @@ def create_conversation_title(
     )
 
 
+def is_admin_email(email: str | None) -> bool:
+    configured_admins = {
+        item.strip().lower()
+        for item in os.getenv("ADMIN_EMAILS", "").split(",")
+        if item.strip()
+    }
+    return bool(email and email.strip().lower() in configured_admins)
+
+
 def require_user(
     credentials:
         HTTPAuthorizationCredentials
@@ -409,6 +490,9 @@ def get_user_settings(
     settings = UserSettings(
         user_id=user_id,
         theme="light",
+        response_verbosity="balanced",
+        preferred_stack="",
+        behavior_preferences="",
         updated_at=utc_now(),
     )
 
@@ -538,6 +622,7 @@ def signup(
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "is_admin": is_admin_email(user.email),
         },
     }
 
@@ -602,6 +687,7 @@ def login(
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "is_admin": is_admin_email(user.email),
         },
     }
 
@@ -626,6 +712,7 @@ def get_current_user(
 
         "email":
             current_user.email,
+        "is_admin": is_admin_email(current_user.email),
     }
 
 
@@ -925,7 +1012,7 @@ async def analyze_project_zip(
     current_user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    filename = Path(file.filename or "").name
+    filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Please choose a .zip file.")
     question = " ".join(str(question or "").split()).strip()
@@ -1009,7 +1096,6 @@ async def analyze_project_zip(
         if isinstance(answer, tuple):
             answer = answer[0]
     except Exception as exc:
-        import logging
         logging.getLogger("devpilot.ai").exception(
             "Project ZIP analysis failed (%s)", type(exc).__name__
         )
@@ -1054,11 +1140,24 @@ async def upload_conversation_file(
     current_user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    filename = Path(file.filename or "").name
-    if not allowed_upload_filename(filename):
+    try:
+        filename = safe_upload_name(file.filename or "")
+    except ValueError:
         raise HTTPException(
             status_code=400,
             detail="Unsupported file type. Upload a developer code/text file only.",
+        )
+
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds the 2 MB limit.")
+
+    try:
+        content_text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded developer files must be UTF-8 text.",
         )
 
     if conversation_id:
@@ -1082,18 +1181,6 @@ async def upload_conversation_file(
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
-
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File exceeds the 2 MB limit.")
-
-    try:
-        content_text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded developer files must be UTF-8 text.",
-        )
 
     # Database is the source of truth. The workspace copy is optional so a
     # Windows path/permission problem never prevents a valid upload.
@@ -1461,12 +1548,18 @@ def chat(
         # expected a tuple response, while existing chats used a plain string.
         # Keep title creation local (create_conversation_title above) so a title
         # formatting/parsing issue cannot break the very first assistant reply.
+        settings = get_user_settings(db, current_user.id)
         ai_response = get_ai_response(
             ai_context,
             memories=memory_context,
             history_context=history_context,
             tool_context=tool_context,
             project_context=saved_project_context,
+            user_preferences={
+                "response_verbosity": settings.response_verbosity,
+                "preferred_stack": settings.preferred_stack,
+                "behavior_preferences": settings.behavior_preferences,
+            },
         )
         if isinstance(ai_response, tuple):
             ai_response = ai_response[0]
@@ -1477,7 +1570,6 @@ def chat(
     except Exception as exc:
         # Keep the user-facing error generic, but log the real cause locally
         # so provider quota/configuration problems can be diagnosed.
-        import logging
         logging.getLogger("devpilot.ai").exception(
             "All configured AI providers failed (%s)",
             type(exc).__name__,
@@ -1585,8 +1677,30 @@ def get_settings(
     )
 
     return {
-        "theme":
-            settings.theme
+        "theme": settings.theme,
+        "response_verbosity": settings.response_verbosity or "balanced",
+        "preferred_stack": settings.preferred_stack or "",
+        "behavior_preferences": settings.behavior_preferences or "",
+    }
+
+
+@app.put("/api/settings/preferences")
+def update_settings_preferences(
+    request: SettingsPreferencesUpdateRequest,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    settings = get_user_settings(db, current_user.id)
+    settings.response_verbosity = request.response_verbosity
+    settings.preferred_stack = request.preferred_stack.strip()
+    settings.behavior_preferences = request.behavior_preferences.strip()
+    settings.updated_at = utc_now()
+    db.commit()
+    db.refresh(settings)
+    return {
+        "response_verbosity": settings.response_verbosity,
+        "preferred_stack": settings.preferred_stack,
+        "behavior_preferences": settings.behavior_preferences,
     }
 
 
@@ -1625,6 +1739,35 @@ def update_theme(
         "theme":
             settings.theme
     }
+
+
+# ============================================================
+# ADMIN FEEDBACK VIEWER
+# ============================================================
+
+@app.get("/api/admin/feedback")
+def list_feedback_for_admin(
+    limit: int = 50,
+    current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    if not is_admin_email(current_user.email):
+        raise HTTPException(status_code=403, detail="Administrator access is not configured for this account.")
+    bounded_limit = max(1, min(int(limit), 100))
+    rows = (
+        db.query(Feedback)
+        .order_by(Feedback.created_at.desc(), Feedback.id.desc())
+        .limit(bounded_limit)
+        .all()
+    )
+    return {"items": [{
+        "id": row.id,
+        "user_id": row.user_id,
+        "email": row.user.email if row.user else None,
+        "type": row.type,
+        "message": row.message,
+        "created_at": serialize_datetime(row.created_at),
+    } for row in rows]}
 
 
 # ============================================================
