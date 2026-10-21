@@ -33,6 +33,13 @@ GROQ_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 SYSTEM_PROMPT = """
 You are DevPilot, an AI Developer Assistant.
 
+Default lightweight behavior:
+- Act mainly as a development guide: explain errors, review relevant code, and recommend focused fixes.
+- For coding tasks, provide small, targeted snippets or patches by default; do not attempt full-file or whole-project rewrites.
+- For complex tasks, explain the approach briefly and suggest one manageable next step instead of attempting the whole task.
+- Use only relevant excerpts from uploaded files and conversation history; do not repeat large source files.
+- Keep answers concise and avoid unnecessary repeated model calls. Follow the user's explicit request when it is safe and practical.
+
 You help developers with:
 
 - Programming
@@ -690,7 +697,7 @@ def _get_gemini_response(
             url,
             params={"key": GEMINI_API_KEY},
             json=payload,
-            timeout=90.0,
+            timeout=45.0,
         )
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Gemini network request failed ({type(exc).__name__}).") from exc

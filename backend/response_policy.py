@@ -34,8 +34,10 @@ def response_style_instruction(user_text: str) -> str:
         or ("complete" in text and "code" in text)
     ):
         return (
-            "Code-request mode: keep the explanation concise, but provide the complete requested code. "
-            "Do not pad the answer with generic background unless it is necessary."
+            "Lightweight coding mode: do not generate or rewrite an entire file or project by default. "
+            "Explain the issue and offer the smallest relevant snippet or patch. "
+            "If the request requires a large or complex implementation, explain the approach and ask which small step to tackle first. "
+            "Preserve existing application logic and avoid unrelated changes."
         )
 
     return (

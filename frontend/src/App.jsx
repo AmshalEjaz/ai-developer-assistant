@@ -400,6 +400,10 @@ function App() {
     setIsLoading,
   ] = useState(false);
 
+  const [persistentChatError, setPersistentChatError] = useState(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const chatAreaRef = useRef(null);
+
   const [
     sidebarOpen,
     setSidebarOpen,
@@ -1237,9 +1241,27 @@ function App() {
       pendingChatScrollRef.current =
         true;
 
-      setMessages(
-        data.messages || []
-      );
+      setMessages((current) => {
+        const savedMessages = data.messages || [];
+        const keepError =
+          persistentChatError
+          && (
+            persistentChatError.conversationId == null
+            || String(persistentChatError.conversationId) === String(data.conversation.id)
+          );
+
+        if (!keepError) return savedMessages;
+
+        return [
+          ...savedMessages.filter((item) => !item.error),
+          {
+            id: persistentChatError.id,
+            role: "assistant",
+            error: true,
+            content: persistentChatError.content,
+          },
+        ];
+      });
 
       setActiveAttachment(
         data.attachment || null
@@ -1649,29 +1671,27 @@ function App() {
 
     } catch (error) {
 
-      setMessages(
-        (current) => [
-          ...current,
+      const errorText =
+        error.message
+        || "DevPilot could not get an AI response from Groq or Gemini. Check backend logs and provider quotas, then try again.";
 
-          {
-            id:
-              `error-${Date.now()}`,
+      // Keep this error visible in the current chat even if conversation messages refresh.
+      const errorId = `error-${Date.now()}`;
+      setPersistentChatError({
+        conversationId: conversationId || activeConversationId || null,
+        content: errorText,
+        id: errorId,
+      });
 
-            role:
-              "assistant",
-
-            error:
-              true,
-
-            content:
-              error.message
-              || (
-                "I couldn't connect "
-                + "to the DevPilot backend."
-              ),
-          },
-        ]
-      );
+      setMessages((current) => [
+        ...current.filter((item) => !item.error),
+        {
+          id: errorId,
+          role: "assistant",
+          error: true,
+          content: errorText,
+        },
+      ]);
 
       loadConversations();
 
@@ -1680,6 +1700,35 @@ function App() {
       setIsLoading(false);
       loadGroqUsage();
     }
+  }
+
+
+  function handleChatScroll() {
+    const element = chatAreaRef.current;
+    if (!element) {
+      setShowScrollToBottom(false);
+      return;
+    }
+
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    setShowScrollToBottom(
+      element.scrollHeight > element.clientHeight
+      && distanceFromBottom > 140
+    );
+  }
+
+
+  function scrollChatToBottom() {
+    const element = chatAreaRef.current;
+    if (!element) return;
+
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: "smooth",
+    });
+    setShowScrollToBottom(false);
   }
 
 
@@ -1707,6 +1756,8 @@ function App() {
 
     setMessage("");
     setMessages([]);
+    setPersistentChatError(null);
+    setShowScrollToBottom(false);
     setActiveAttachment(null);
     setPendingAttachmentFile(null);
     setAttachmentUploading(false);
@@ -3855,7 +3906,11 @@ function App() {
             || messages.length > 0
           ) && (
 
-            <section className="chat-area">
+            <section
+              className="chat-area"
+              ref={chatAreaRef}
+              onScroll={handleChatScroll}
+            >
 
               {conversationLoading ? (
 
@@ -3997,6 +4052,18 @@ function App() {
 
             </section>
           )}
+
+        {!activePanel && messages.length > 0 && showScrollToBottom && (
+          <button
+            type="button"
+            className="scroll-to-bottom-button"
+            onClick={scrollChatToBottom}
+            aria-label="Scroll to latest message"
+            title="Scroll to latest message"
+          >
+            ↓
+          </button>
+        )}
 
 
         {!activePanel

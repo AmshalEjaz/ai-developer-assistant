@@ -14,6 +14,12 @@ DevPilot is a local-first developer workspace with a React chat interface and a 
 - Text-file attachment and scoped file-reading tools.
 - Python execution is **disabled by default** because AST checks alone are not a security sandbox. Do not enable it for untrusted input without OS/container isolation.
 
+## Lightweight assistance defaults
+
+DevPilot defaults to development guidance: concise explanations, debugging help, code review, and small targeted snippets. For complex changes or whole-file rewrites, it should explain the approach and suggest one manageable step rather than attempting a large implementation by default. Uploaded files and conversation context should be limited to relevant excerpts whenever practical.
+
+The chat UI keeps provider-error messages visible in the active conversation during message refreshes and provides a floating arrow to jump back to the latest message when the chat is scrolled upward. These UI changes do not change authentication, database schemas, provider credentials, or existing saved-chat storage.
+
 ## Architecture
 
 - `frontend/src/App.jsx`: main React workspace, chat history, settings, and interactions.

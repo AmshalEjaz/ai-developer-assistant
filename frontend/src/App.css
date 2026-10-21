@@ -3896,3 +3896,46 @@ button {
   outline: 2px solid #3b82f6;
   outline-offset: 1px;
 }
+
+
+/* Floating control for returning to the latest chat message. */
+.scroll-to-bottom-button {
+  position: fixed;
+  z-index: 30;
+  right: max(24px, calc((100vw - 900px) / 2));
+  bottom: 112px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #bfdbfe;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 5px 18px rgba(37, 99, 235, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.scroll-to-bottom-button:hover {
+  background: #eff6ff;
+  transform: translateY(-2px);
+}
+
+.app[data-theme="dark"] .scroll-to-bottom-button {
+  background: #17243a;
+  border-color: #36547d;
+  color: #bfdbfe;
+}
+
+@media (max-width: 700px) {
+  .scroll-to-bottom-button {
+    right: 18px;
+    bottom: 102px;
+    width: 38px;
+    height: 38px;
+  }
+}
