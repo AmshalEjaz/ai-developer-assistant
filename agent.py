@@ -443,7 +443,7 @@ def _get_groq_ai_response(
             "model": MODEL_NAME,
             "messages": working_messages,
             "temperature": 0.7,
-            "max_completion_tokens": 768,
+            "max_completion_tokens": 8192,
         }
 
         if not force_final:
@@ -681,7 +681,7 @@ def _get_gemini_response(
             "thinkingConfig": {
                 "thinkingBudget": 0,
             },
-            "maxOutputTokens": 1536,
+            "maxOutputTokens": 8192,
         },
     }
     url = GEMINI_ENDPOINT.format(model=GEMINI_MODEL)
@@ -690,7 +690,7 @@ def _get_gemini_response(
             url,
             params={"key": GEMINI_API_KEY},
             json=payload,
-            timeout=45.0,
+            timeout=90.0,
         )
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Gemini network request failed ({type(exc).__name__}).") from exc
