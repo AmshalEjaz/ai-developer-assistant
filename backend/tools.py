@@ -304,7 +304,7 @@ TOOL_REGISTRY = {
         "handler": run_python,
     },
     "search_documentation": {
-        "description": "Search current developer documentation and technical sources using live web search.",
+        "description": "Search the live web for current facts, news, prices, events, software updates, and technical documentation. Use for time-sensitive or explicitly web-search questions; base the answer on returned snippets and cite source URLs.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "minimum": 1, "maximum": MAX_SEARCH_RESULTS}}, "required": ["query"], "additionalProperties": False},
         "handler": search_documentation,
     },
