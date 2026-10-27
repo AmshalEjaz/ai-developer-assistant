@@ -1560,10 +1560,23 @@ def chat(
                 "preferred_stack": settings.preferred_stack,
                 "behavior_preferences": settings.behavior_preferences,
             },
+            # Ask the selected provider (Groq, or Gemini fallback) for a short
+            # topic-based sidebar title only on the first message of a chat.
+            include_chat_title=is_new_conversation,
         )
         if isinstance(ai_response, tuple):
-            ai_response = ai_response[0]
+            ai_response, generated_title = ai_response
         ai_response = str(ai_response or "").strip()
+
+        # Save the AI-generated headline to the conversation record so the
+        # sidebar and chat header show a summary rather than the raw question.
+        if is_new_conversation and generated_title:
+            clean_title = " ".join(str(generated_title).split()).strip(" \"'`#*-")
+            if clean_title:
+                conversation.title = clean_title[:50]
+                db.add(conversation)
+                db.commit()
+                db.refresh(conversation)
         if not ai_response:
             raise RuntimeError("AI providers returned an empty response.")
 
